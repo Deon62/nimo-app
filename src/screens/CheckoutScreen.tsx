@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
-import { Check, Gem, Plus } from 'lucide-react-native';
+import { Check, Gem } from 'lucide-react-native';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -176,17 +176,15 @@ export function CheckoutScreen() {
                   )}
                 </Pressable>
               ) : (
-                <Pressable onPress={() => router.push('/payment-methods' as Href)} accessibilityRole="button">
-                  {({ pressed }) => (
-                    <View style={[styles.cardRow, pressed && styles.pressed]}>
-                      <View style={styles.addIcon}>
-                        <Plus size={18} color={colors.ink} strokeWidth={2} />
-                      </View>
-                      <AppText variant="body" weight="500" style={styles.flex}>
-                        Add a card or M-Pesa
-                      </AppText>
-                    </View>
-                  )}
+                <Pressable
+                  onPress={() => router.push('/payment-methods' as Href)}
+                  accessibilityRole="link"
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.addLink, pressed && styles.pressed]}
+                >
+                  <AppText variant="body" weight="600" align="center" style={styles.addLinkText}>
+                    Add a card or M-Pesa
+                  </AppText>
                 </Pressable>
               )}
             </View>
@@ -258,16 +256,8 @@ const styles = StyleSheet.create({
   payment: { gap: spacing.xs },
   kicker: { letterSpacing: 0.6 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.md },
-  addIcon: {
-    width: 44,
-    height: 30,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    borderColor: colors.border,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  addLink: { alignSelf: 'center', paddingVertical: spacing.md },
+  addLinkText: { textDecorationLine: 'underline' },
   pressed: { opacity: 0.5 },
   flex: { flex: 1 },
   footer: { marginTop: 'auto' },
