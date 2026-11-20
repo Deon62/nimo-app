@@ -17,6 +17,8 @@ interface ScreenHeaderProps {
   /** Modals already sit below the status bar on iOS. */
   respectTopInset?: boolean;
   bordered?: boolean;
+  /** Overrides the default back behaviour (e.g. stepping back inside a multi-step screen). */
+  onBack?: () => void;
 }
 
 /** Goes back, or to `fallback` when the screen was opened directly (e.g. from a link). */
@@ -32,6 +34,7 @@ export function ScreenHeader({
   right,
   respectTopInset = true,
   bordered = false,
+  onBack,
 }: ScreenHeaderProps) {
   const { top } = useSafeAreaInsets();
   return (
@@ -39,7 +42,7 @@ export function ScreenHeader({
       <View style={styles.side}>
         {mode === 'back' ? (
           <PressableScale
-            onPress={() => goBackOr()}
+            onPress={onBack ?? (() => goBackOr())}
             accessibilityLabel={backLabel}
             style={styles.back}
             activeScale={1}
@@ -48,7 +51,12 @@ export function ScreenHeader({
             <ArrowLeft size={24} color={colors.ink} strokeWidth={1.9} />
           </PressableScale>
         ) : (
-          <PressableScale onPress={() => goBackOr()} accessibilityLabel="Close" style={styles.close} activeScale={0.92}>
+          <PressableScale
+            onPress={onBack ?? (() => goBackOr())}
+            accessibilityLabel="Close"
+            style={styles.close}
+            activeScale={0.92}
+          >
             <X size={22} color={colors.ink} strokeWidth={1.9} />
           </PressableScale>
         )}

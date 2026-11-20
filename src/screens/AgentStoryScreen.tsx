@@ -77,9 +77,9 @@ function Slide({ agent, index }: { agent: Agent; index: number }) {
         <AppText variant="label" style={styles.kicker}>
           GOOD AT
         </AppText>
-        {agent.capabilities.map((item) => (
-          <AppText key={item} variant="title" tone="inverse" style={styles.capability}>
-            {item}
+        {agent.capabilities.map((title) => (
+          <AppText key={title} variant="title" tone="inverse" style={styles.capability}>
+            {title}
           </AppText>
         ))}
       </View>

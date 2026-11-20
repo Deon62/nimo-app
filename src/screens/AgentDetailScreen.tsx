@@ -1,20 +1,57 @@
 import { useState } from 'react';
 import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { Phone, UserX, Video } from 'lucide-react-native';
+import { AudioLines, Phone, Square, UserX, Video, type LucideIcon } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AgentAvatar } from '@/components/AgentAvatar';
 import { AppText } from '@/components/AppText';
 import { AvailabilityLabel } from '@/components/AvailabilityLabel';
-import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
 import { PressableScale } from '@/components/PressableScale';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { VoicePreviewButton } from '@/components/VoicePreviewButton';
 import { getAgent } from '@/data/agents';
 import { useActiveCall } from '@/state/ActiveCallContext';
+import { useVoicePreview } from '@/state/VoicePreviewContext';
 import { colors, screenPadding, spacing } from '@/theme';
+
+const ACTION_SIZE = 60;
+
+/** Round action with a caption underneath; all three on the page share one size. */
+function ActionCircle({
+  icon: Icon,
+  label,
+  onPress,
+  filled = false,
+  disabled = false,
+  accessibilityLabel,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress: () => void;
+  filled?: boolean;
+  disabled?: boolean;
+  accessibilityLabel: string;
+}) {
+  return (
+    <View style={[styles.action, disabled && styles.disabled]}>
+      <PressableScale
+        onPress={onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityState={{ disabled }}
+        activeScale={0.92}
+        style={[styles.circle, filled ? styles.circleFilled : styles.circleOutline]}
+      >
+        <Icon size={24} color={filled ? '#FFFFFF' : colors.ink} strokeWidth={1.9} />
+      </PressableScale>
+      <AppText variant="footnote" weight="500">
+        {label}
+      </AppText>
+    </View>
+  );
+}
 
 // iOS presents this as a sheet that already sits below the status bar.
 const SHEET_PRESENTATION = Platform.OS === 'ios';
@@ -23,6 +60,7 @@ export function AgentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { bottom } = useSafeAreaInsets();
   const { callAgent } = useActiveCall();
+  const preview = useVoicePreview();
   const agent = getAgent(id);
   // Fits on one screen; only scrolls on very small devices where it would otherwise clip.
   const [viewport, setViewport] = useState(0);
@@ -38,6 +76,7 @@ export function AgentDetailScreen() {
   }
 
   const offline = agent.availability === 'offline';
+  const playing = preview.playingId === agent.id;
 
   return (
     <View style={styles.screen}>
@@ -64,24 +103,27 @@ export function AgentDetailScreen() {
         </View>
 
         <View style={styles.actions}>
-          <Button
+          <ActionCircle
+            icon={Phone}
             label={offline ? 'Offline' : 'Call'}
-            size="large"
-            icon={offline ? undefined : <Phone size={18} color="#FFFFFF" strokeWidth={2} />}
+            filled
             disabled={offline}
             onPress={() => callAgent(agent.id)}
-            style={styles.flex}
+            accessibilityLabel={offline ? `${agent.name} is offline` : `Call ${agent.name}`}
           />
-          <VoicePreviewButton agent={agent} size="large" style={styles.flex} />
-          <PressableScale
-            onPress={() => callAgent(agent.id, { video: true })}
+          <ActionCircle
+            icon={playing ? Square : AudioLines}
+            label={playing ? 'Stop' : 'Listen'}
+            onPress={() => preview.toggle(agent)}
+            accessibilityLabel={playing ? `Stop ${agent.name}'s voice` : `Listen to ${agent.name}'s voice`}
+          />
+          <ActionCircle
+            icon={Video}
+            label="Video"
             disabled={offline}
+            onPress={() => callAgent(agent.id, { video: true })}
             accessibilityLabel={`Video call ${agent.name}`}
-            activeScale={0.92}
-            style={[styles.videoButton, offline && styles.disabled]}
-          >
-            <Video size={22} color={colors.ink} strokeWidth={1.8} />
-          </PressableScale>
+          />
         </View>
 
         <AppText variant="subhead" tone="secondary" align="center" style={styles.tagline}>
@@ -90,13 +132,11 @@ export function AgentDetailScreen() {
 
         <View style={styles.section}>
           <AppText variant="footnote" tone="tertiary" style={styles.kicker}>
-            TRY ASKING
+            CAN HELP WITH
           </AppText>
-          {agent.starters.map((item) => (
-            <AppText key={item} variant="callout" style={styles.capability}>
-              “{item}”
-            </AppText>
-          ))}
+          <AppText variant="callout" style={styles.helpText}>
+            {agent.helpsWith}
+          </AppText>
         </View>
 
         <View style={styles.section}>
@@ -128,20 +168,20 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center' },
   name: { marginTop: spacing.md },
   availability: { marginTop: 6 },
-  actions: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  videoButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 1,
-    borderColor: colors.border,
+  actions: { flexDirection: 'row', justifyContent: 'center', gap: spacing.xxxl },
+  action: { alignItems: 'center', gap: spacing.sm, width: ACTION_SIZE + 16 },
+  circle: {
+    width: ACTION_SIZE,
+    height: ACTION_SIZE,
+    borderRadius: ACTION_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  circleFilled: { backgroundColor: colors.ink },
+  circleOutline: { borderWidth: 1.5, borderColor: colors.border },
+  helpText: { lineHeight: 22 },
   disabled: { opacity: 0.4 },
-  flex: { flex: 1 },
   tagline: { paddingHorizontal: spacing.sm },
   section: { gap: 6 },
   kicker: { letterSpacing: 0.8, marginBottom: 2 },
-  capability: { color: colors.text.primary },
 });

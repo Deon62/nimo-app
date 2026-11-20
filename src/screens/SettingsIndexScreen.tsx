@@ -10,12 +10,14 @@ import { ListRow } from '@/components/ListRow';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Toast, useToast } from '@/components/Toast';
 import { settingsSections } from '@/data/settings';
+import { useAuth } from '@/state/AuthContext';
 import { colors, screenPadding, spacing } from '@/theme';
 
 export function SettingsIndexScreen() {
   const { bottom } = useSafeAreaInsets();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const toast = useToast();
+  const { signOut } = useAuth();
 
   return (
     <View style={styles.screen}>
@@ -48,7 +50,7 @@ export function SettingsIndexScreen() {
         onCancel={() => setConfirmSignOut(false)}
         onConfirm={() => {
           setConfirmSignOut(false);
-          toast.show('Coming soon');
+          signOut();
         }}
       />
     </View>
