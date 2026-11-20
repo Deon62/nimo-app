@@ -35,15 +35,6 @@ export function CardChip({ method }: { method: ChipMethod }) {
 }
 
 const styles = StyleSheet.create({
-  chip: {
-    width: 48,
-    height: 32,
-    borderRadius: 7,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-    borderColor: colors.border,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  chip: { width: 48, height: 32, alignItems: 'center', justifyContent: 'center' },
   text: { fontFamily, fontSize: 10, letterSpacing: 0.6, color: colors.text.primary },
 });
