@@ -23,7 +23,7 @@ import { CallOptionsSheet } from '@/components/CallOptionsSheet';
 import { PressableScale } from '@/components/PressableScale';
 import { VoiceOrb } from '@/components/VoiceOrb';
 import { getAgent } from '@/data/agents';
-import type { CallPhase, MockCallState } from '@/hooks/useMockCall';
+import type { CallPhase, CallState } from '@/hooks/useVoiceCall';
 import { useAccount } from '@/state/AccountContext';
 import { useActiveCall } from '@/state/ActiveCallContext';
 import { usePreferences } from '@/state/PreferencesContext';
@@ -51,7 +51,8 @@ function leave() {
   else router.replace('/');
 }
 
-function captionFor(call: MockCallState, agentName: string): { who: string; text: string; muted?: boolean } | null {
+function captionFor(call: CallState, agentName: string): { who: string; text: string; muted?: boolean } | null {
+  if (call.error) return { who: 'Call ended', text: call.error, muted: true };
   if (call.phase === 'ended' || call.phase === 'connecting') return null;
   if (call.caption) {
     return { who: call.caption.speaker === 'user' ? 'You' : agentName, text: call.caption.text };
@@ -101,12 +102,15 @@ export function ActiveCallScreen() {
 
   useEffect(() => {
     if (phase !== 'ended') return;
-    const t = setTimeout(() => {
-      dismiss();
-      leave();
-    }, ENDED_HOLD_MS);
+    const t = setTimeout(
+      () => {
+        dismiss();
+        leave();
+      },
+      call?.error ? ENDED_HOLD_MS * 3 : ENDED_HOLD_MS,
+    );
     return () => clearTimeout(t);
-  }, [phase, dismiss]);
+  }, [phase, dismiss, call?.error]);
 
   useEffect(() => {
     if (!call) {
@@ -173,7 +177,7 @@ export function ActiveCallScreen() {
     });
   };
 
-  const caption = showCaptions ? captionFor(call, agent.name) : null;
+  const caption = showCaptions || call.error ? captionFor(call, agent.name) : null;
   const ended = call.phase === 'ended';
   const status = call.muted && call.phase === 'listening' ? 'Muted' : phaseLabel[call.phase];
   const videoOn = call.video && !!permission?.granted && !ended;

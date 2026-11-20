@@ -1,22 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { router } from 'expo-router';
 
-import { useMockCall, type CompletedCall, type MockCallController } from '@/hooks/useMockCall';
+import { useVoiceCall, type CompletedCall, type VoiceCallController } from '@/hooks/useVoiceCall';
 import { useCallHistory } from './CallHistoryContext';
 import { useVoicePreview } from './VoicePreviewContext';
 
-interface ActiveCallValue extends MockCallController {
-  /** Starts a demo call with an agent and presents the call screen. */
+interface ActiveCallValue extends VoiceCallController {
+  /** Starts a call with an agent and presents the call screen. */
   callAgent: (agentId: string, options?: { video?: boolean }) => void;
 }
 
 const ActiveCallContext = createContext<ActiveCallValue | null>(null);
 
 export function ActiveCallProvider({ children }: { children: ReactNode }) {
-  const { addCall } = useCallHistory();
+  const { addCall, refresh } = useCallHistory();
 
   const onCallEnded = useCallback(
     (completed: CompletedCall) => {
+      if (!completed.connected) return;
       addCall({
         id: completed.id,
         agentId: completed.agentId,
@@ -26,11 +27,13 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
         recorded: completed.recorded,
         transcript: completed.transcript,
       });
+      // Pick up the saved version once the API has it.
+      setTimeout(() => void refresh(), 1500);
     },
-    [addCall],
+    [addCall, refresh],
   );
 
-  const controller = useMockCall({ onCallEnded });
+  const controller = useVoiceCall({ onCallEnded });
   const { stop: stopPreview } = useVoicePreview();
   const { call, start, end, dismiss, setVideo } = controller;
 
@@ -38,9 +41,10 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
   const phase = call?.phase;
   useEffect(() => {
     if (phase !== 'ended') return;
-    const t = setTimeout(dismiss, 1800);
+    // Leave errors up long enough to read.
+    const t = setTimeout(dismiss, call?.error ? 4000 : 1800);
     return () => clearTimeout(t);
-  }, [phase, dismiss]);
+  }, [phase, dismiss, call?.error]);
 
   const callAgent = useCallback(
     (agentId: string, options: { video?: boolean } = {}) => {
@@ -52,7 +56,7 @@ export function ActiveCallProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (ongoing) end();
-      start(agentId, options);
+      void start(agentId, options);
       router.push('/call');
     },
     [call, start, end, setVideo, stopPreview],

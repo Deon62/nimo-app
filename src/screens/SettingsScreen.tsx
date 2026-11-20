@@ -1,14 +1,18 @@
+import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { Settings } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { ConfirmSheet } from '@/components/ConfirmSheet';
 import { EmptyState } from '@/components/EmptyState';
 import { InsetGroup } from '@/components/InsetGroup';
 import { ListRow } from '@/components/ListRow';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Toast, useToast } from '@/components/Toast';
 import { getSettingsSection, type SettingsItem, type SettingsSectionId } from '@/data/settings';
+import { api, errorMessage } from '@/lib/api';
+import { useAuth } from '@/state/AuthContext';
 import { useCallHistory } from '@/state/CallHistoryContext';
 import { usePreferences } from '@/state/PreferencesContext';
 import { colors, screenPadding, spacing } from '@/theme';
@@ -20,6 +24,8 @@ export function SettingsScreen() {
   const prefs = usePreferences();
   const { clearHistory } = useCallHistory();
   const toast = useToast();
+  const { signOut } = useAuth();
+  const [confirm, setConfirm] = useState<'history' | 'account' | null>(null);
 
   if (!section) {
     return (
@@ -34,8 +40,11 @@ export function SettingsScreen() {
 
   const onLink = (item: Extract<SettingsItem, { kind: 'link' }>) => {
     if (item.id === 'delete') {
-      clearHistory();
-      toast.show('Call history deleted');
+      setConfirm('history');
+      return;
+    }
+    if (item.id === 'delete-account') {
+      setConfirm('account');
       return;
     }
     toast.show('Coming soon');
@@ -108,6 +117,33 @@ export function SettingsScreen() {
         })}
       </ScrollView>
       <Toast message={toast.message} bottom={bottom + spacing.xl} />
+      <ConfirmSheet
+        visible={confirm !== null}
+        title={confirm === 'account' ? 'Delete your account?' : 'Delete all calls?'}
+        message={
+          confirm === 'account'
+            ? 'Your profile, calls and recordings are removed for good. This can’t be undone.'
+            : 'Transcripts and recordings are removed for good.'
+        }
+        confirmLabel="Delete"
+        destructive
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          const what = confirm;
+          setConfirm(null);
+          try {
+            if (what === 'account') {
+              await api('/me', { method: 'DELETE' });
+              await signOut();
+            } else {
+              await clearHistory();
+              toast.show('Call history deleted');
+            }
+          } catch (e) {
+            toast.show(errorMessage(e));
+          }
+        }}
+      />
     </View>
   );
 }

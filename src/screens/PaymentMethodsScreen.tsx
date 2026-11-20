@@ -89,7 +89,7 @@ export function PaymentMethodsScreen() {
           selected
             ? [
                 ...(selected.id !== defaultPaymentId
-                  ? [{ label: 'Make default', onPress: () => setDefaultPayment(selected.id) }]
+                  ? [{ label: 'Make default', onPress: () => void setDefaultPayment(selected.id).catch(() => {}) }]
                   : []),
                 { label: 'Remove', destructive: true, onPress: () => setConfirmRemove(selected) },
               ]
@@ -104,7 +104,7 @@ export function PaymentMethodsScreen() {
         destructive
         onCancel={() => setConfirmRemove(null)}
         onConfirm={() => {
-          if (confirmRemove) removePaymentMethod(confirmRemove.id);
+          if (confirmRemove) removePaymentMethod(confirmRemove.id).catch(() => {});
           setConfirmRemove(null);
         }}
       />

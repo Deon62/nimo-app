@@ -8,6 +8,7 @@ import { Button } from '@/components/Button';
 import { FormField } from '@/components/FormField';
 import { goBackOr, ScreenHeader } from '@/components/ScreenHeader';
 import { usePickPhoto } from '@/hooks/usePickPhoto';
+import { errorMessage } from '@/lib/api';
 import { useAccount } from '@/state/AccountContext';
 import { colors, screenPadding, spacing } from '@/theme';
 
@@ -15,10 +16,12 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function EditProfileScreen() {
   const { bottom } = useSafeAreaInsets();
-  const { profile, updateProfile } = useAccount();
+  const { profile, updateProfile, setAvatar } = useAccount();
   const pickPhoto = usePickPhoto();
   const [draft, setDraft] = useState(profile);
   const [submitted, setSubmitted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const errors = {
     firstName: draft.firstName.trim() ? undefined : 'Enter your first name',
@@ -28,17 +31,24 @@ export function EditProfileScreen() {
   const changed = (Object.keys(draft) as (keyof typeof draft)[]).some((k) => draft[k] !== profile[k]);
   const set = (key: keyof typeof draft) => (value: string) => setDraft((d) => ({ ...d, [key]: value }));
 
-  const save = () => {
+  const save = async () => {
     setSubmitted(true);
     if (!valid) return;
-    updateProfile({
-      ...draft,
-      firstName: draft.firstName.trim(),
-      lastName: draft.lastName.trim(),
-      email: draft.email.trim(),
-      phone: draft.phone.trim(),
-    });
-    goBackOr('/profile');
+    setBusy(true);
+    setError(null);
+    try {
+      await updateProfile({
+        firstName: draft.firstName.trim(),
+        lastName: draft.lastName.trim(),
+        email: draft.email.trim(),
+        phone: draft.phone.trim(),
+      });
+      if (draft.avatarUri !== profile.avatarUri) await setAvatar(draft.avatarUri);
+      goBackOr('/profile');
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
   };
 
   return (
@@ -115,7 +125,12 @@ export function EditProfileScreen() {
           />
         </View>
 
-        <Button label="Save" size="large" onPress={save} disabled={!changed} style={styles.save} />
+        {error ? (
+          <AppText variant="footnote" tone="danger" align="center">
+            {error}
+          </AppText>
+        ) : null}
+        <Button label="Save" size="large" onPress={save} disabled={!changed} loading={busy} style={styles.save} />
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, SectionList, StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { CircleDot, SearchX } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,7 +12,6 @@ import { Separator } from '@/components/Separator';
 import { SkeletonRows } from '@/components/Skeleton';
 import { getAgent } from '@/data/agents';
 import { callStatusLabel, type CallRecord } from '@/data/calls';
-import { useSimulatedLoading } from '@/hooks/useSimulatedLoading';
 import { useTabBarInset } from '@/hooks/useTabBarInset';
 import { useCallHistory } from '@/state/CallHistoryContext';
 import { colors, screenPadding, spacing } from '@/theme';
@@ -51,8 +50,21 @@ function CallRow({ record }: { record: CallRecord }) {
 export function CallHistoryScreen() {
   const { top } = useSafeAreaInsets();
   const bottomInset = useTabBarInset();
-  const { calls, restoreSampleHistory } = useCallHistory();
-  const loading = useSimulatedLoading();
+  const { calls, loading, error, refresh } = useCallHistory();
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Stay current when coming back to the tab.
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh]),
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refresh();
+    setRefreshing(false);
+  };
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
 
@@ -107,6 +119,8 @@ export function CallHistoryScreen() {
           </AppText>
         )}
         keyExtractor={(item) => item.id}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         ListHeaderComponent={header}
         renderItem={({ item }) => <CallRow record={item} />}
         ItemSeparatorComponent={() => <Separator inset={screenPadding + AVATAR + spacing.md + 2} />}
@@ -119,6 +133,14 @@ export function CallHistoryScreen() {
             <View style={styles.gutter}>
               <SkeletonRows count={4} avatarSize={AVATAR} />
             </View>
+          ) : error && !hasCalls ? (
+            <EmptyState
+              image={phoneImage}
+              title="Couldn’t load calls"
+              message={error}
+              actionLabel="Try again"
+              onAction={() => void refresh()}
+            />
           ) : hasCalls ? (
             <EmptyState icon={SearchX} title="No matching calls" message={`Nothing matches “${query.trim()}”.`} />
           ) : (
@@ -130,15 +152,6 @@ export function CallHistoryScreen() {
               onAction={() => router.navigate('/explore')}
             />
           )
-        }
-        ListFooterComponent={
-          !loading && !hasCalls ? (
-            <Pressable onPress={restoreSampleHistory} style={styles.restore} accessibilityRole="button">
-              <AppText variant="footnote" tone="secondary" align="center">
-                Restore sample calls
-              </AppText>
-            </Pressable>
-          ) : undefined
         }
       />
     </View>
@@ -161,5 +174,4 @@ const styles = StyleSheet.create({
   name: { flex: 1 },
   sectionHeader: { paddingHorizontal: screenPadding, paddingTop: spacing.xl, paddingBottom: spacing.xs },
   duration: { fontVariant: ['tabular-nums'] },
-  restore: { paddingVertical: spacing.md, minHeight: 44, justifyContent: 'center' },
 });

@@ -10,7 +10,7 @@ import Animated, {
 import Svg, { Circle, Defs, Ellipse, G, RadialGradient, Stop } from 'react-native-svg';
 
 import type { AvatarTone } from '@/data/agents';
-import type { CallPhase } from '@/hooks/useMockCall';
+import type { CallPhase } from '@/hooks/useVoiceCall';
 import { mix } from '@/utils/color';
 
 /** How the bubble moves in each state: swirl speed (deg/s), pulse depth and rate, resting scale. */

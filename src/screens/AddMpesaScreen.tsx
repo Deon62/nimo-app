@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { CardChip } from '@/components/CardChip';
 import { FormField } from '@/components/FormField';
 import { goBackOr, ScreenHeader } from '@/components/ScreenHeader';
+import { errorMessage } from '@/lib/api';
 import { useAccount } from '@/state/AccountContext';
 import { colors, screenPadding, spacing } from '@/theme';
 import { formatKenyanPhone, normaliseKenyanPhone } from '@/utils/mpesa';
@@ -14,16 +15,25 @@ import { formatKenyanPhone, normaliseKenyanPhone } from '@/utils/mpesa';
 /** Adds an M-Pesa number. Payments to it arrive as a PIN prompt (STK push) on the phone. */
 export function AddMpesaScreen() {
   const { bottom } = useSafeAreaInsets();
-  const { addPaymentMethod } = useAccount();
+  const { addMpesaNumber } = useAccount();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const normalised = normaliseKenyanPhone(phone);
 
-  const save = () => {
+  const save = async () => {
     setSubmitted(true);
     if (!normalised) return;
-    addPaymentMethod({ kind: 'mpesa', phone: normalised });
-    goBackOr('/profile');
+    setBusy(true);
+    setError(null);
+    try {
+      await addMpesaNumber(normalised);
+      goBackOr('/profile');
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
   };
 
   return (
@@ -52,7 +62,12 @@ export function AddMpesaScreen() {
         />
 
         <View style={styles.footer}>
-          <Button label="Add M-Pesa" size="large" onPress={save} />
+          {error ? (
+            <AppText variant="footnote" tone="danger" align="center" style={styles.error}>
+              {error}
+            </AppText>
+          ) : null}
+          <Button label="Add M-Pesa" size="large" onPress={save} loading={busy} />
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -72,4 +87,5 @@ const styles = StyleSheet.create({
   },
   head: { gap: spacing.md },
   footer: { marginTop: 'auto' },
+  error: { marginBottom: spacing.md },
 });

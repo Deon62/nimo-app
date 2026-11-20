@@ -9,20 +9,21 @@ import { Button } from '@/components/Button';
 import { FormField } from '@/components/FormField';
 import { Mascot } from '@/components/illustrations/Mascot';
 import { useSocialSignIn } from '@/hooks/useSocialSignIn';
-import { useAccount } from '@/state/AccountContext';
+import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/state/AuthContext';
 import { colors, screenPadding, spacing } from '@/theme';
 
 export function SignUpScreen() {
   const { top, bottom } = useSafeAreaInsets();
-  const { signIn } = useAuth();
-  const { updateProfile } = useAccount();
+  const { signUpWithEmail } = useAuth();
   const social = useSocialSignIn();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [checkEmail, setCheckEmail] = useState(false);
 
   const errors = {
     name: name.trim() ? undefined : 'What should Nimo call you?',
@@ -30,16 +31,25 @@ export function SignUpScreen() {
     password: password.length >= 8 ? undefined : 'At least 8 characters',
   };
 
-  const create = () => {
+  const create = async () => {
     setSubmitted(true);
     if (Object.values(errors).some(Boolean)) return;
     setBusy(true);
-    setTimeout(() => {
-      const [firstName, ...rest] = name.trim().split(/\s+/);
-      updateProfile({ firstName, lastName: rest.join(' '), email: email.trim() });
-      signIn('email');
-    }, 900);
+    setError(null);
+    const [firstName, ...rest] = name.trim().split(/\s+/);
+    try {
+      const result = await signUpWithEmail({ email, password, firstName, lastName: rest.join(' ') });
+      if (result === 'confirm-email') {
+        setCheckEmail(true);
+        setBusy(false);
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
   };
+
+  const shownError = error ?? social.error;
 
   const show = (e?: string) => (submitted ? e : undefined);
 
@@ -97,6 +107,15 @@ export function SignUpScreen() {
         </View>
 
         <View style={styles.footer}>
+          {checkEmail ? (
+            <AppText variant="footnote" tone="secondary" align="center">
+              Check your email to confirm your account, then log in.
+            </AppText>
+          ) : shownError ? (
+            <AppText variant="footnote" tone="danger" align="center">
+              {shownError}
+            </AppText>
+          ) : null}
           <Button label="Create account" size="large" onPress={create} loading={busy} />
           <AppText variant="caption" tone="tertiary" align="center">
             By continuing you agree to the Terms and Privacy Policy.

@@ -5,7 +5,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 
 import type { Agent } from '@/data/agents';
 import { useActiveCall } from '@/state/ActiveCallContext';
-import { lineForAgent, useVoicePreview, type SpokenLine } from '@/state/VoicePreviewContext';
+import { sampleLineUrl, useVoicePreview } from '@/state/VoicePreviewContext';
 import { colors, radius, spacing } from '@/theme';
 import { mix, withAlpha } from '@/utils/color';
 import { formatDuration } from '@/utils/format';
@@ -13,8 +13,6 @@ import { AppText } from './AppText';
 import { PressableScale } from './PressableScale';
 import { VoiceOrb } from './VoiceOrb';
 
-/** Voice used for the caller's side of the sample. */
-const CALLER_VOICE = { pitch: 1.05, rate: 1.02, language: 'en-US' };
 /** Rough speaking speed, used only to show the sample length. */
 const MS_PER_CHAR = 62;
 const BARS = 30;
@@ -42,9 +40,7 @@ export function SampleCallCard({ agent, title }: SampleCallCardProps) {
       ]),
     [agent],
   );
-  const lines: SpokenLine[] = transcript.map((l) =>
-    l.speaker === 'agent' ? lineForAgent(agent, l.text) : { text: l.text, ...CALLER_VOICE },
-  );
+  const lines = transcript.map((_, i) => sampleLineUrl(agent.id, i));
   const seconds = Math.round((transcript.reduce((n, l) => n + l.text.length, 0) * MS_PER_CHAR) / 1000);
 
   // Waveform: one bar group per line, louder for the agent.

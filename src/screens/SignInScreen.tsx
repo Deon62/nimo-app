@@ -9,33 +9,54 @@ import { Button } from '@/components/Button';
 import { FormField } from '@/components/FormField';
 import { Mascot } from '@/components/illustrations/Mascot';
 import { useSocialSignIn } from '@/hooks/useSocialSignIn';
-import { useAccount } from '@/state/AccountContext';
+import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/state/AuthContext';
 import { colors, screenPadding, spacing } from '@/theme';
 
 export function SignInScreen() {
   const { top, bottom } = useSafeAreaInsets();
-  const { signIn } = useAuth();
-  const { profile } = useAccount();
+  const { signInWithEmail, resetPassword } = useAuth();
   const social = useSocialSignIn();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const errors = {
     email: isEmail(email) ? undefined : 'Enter a valid email',
     password: password.length >= 6 ? undefined : 'At least 6 characters',
   };
 
-  const logIn = () => {
+  const logIn = async () => {
     setSubmitted(true);
+    setError(null);
     if (errors.email || errors.password) return;
     setBusy(true);
-    // Mock: any well-formed email and password signs in.
-    setTimeout(() => signIn('email'), 800);
+    try {
+      await signInWithEmail(email, password);
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
   };
+
+  const forgot = async () => {
+    if (!isEmail(email)) {
+      setSubmitted(true);
+      return;
+    }
+    setError(null);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
+  const shownError = error ?? social.error;
 
   return (
     <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -50,7 +71,7 @@ export function SignInScreen() {
             Welcome back
           </AppText>
           <AppText variant="callout" tone="secondary" align="center">
-            Nimo missed you{profile.firstName ? `, ${profile.firstName}` : ''}.
+            Nimo missed you.
           </AppText>
         </View>
 
@@ -83,7 +104,7 @@ export function SignInScreen() {
             error={submitted ? errors.password : undefined}
           />
           <Pressable
-            onPress={() => (isEmail(email) ? setResetSent(true) : setSubmitted(true))}
+            onPress={forgot}
             hitSlop={8}
             accessibilityRole="button"
             style={styles.forgot}
@@ -95,6 +116,11 @@ export function SignInScreen() {
         </View>
 
         <View style={styles.footer}>
+          {shownError ? (
+            <AppText variant="footnote" tone="danger" align="center">
+              {shownError}
+            </AppText>
+          ) : null}
           <Button label="Log in" size="large" onPress={logIn} loading={busy} />
           <AuthSwitch prompt="New to Nimo?" action="Sign up" onPress={() => router.replace('/sign-up')} />
         </View>

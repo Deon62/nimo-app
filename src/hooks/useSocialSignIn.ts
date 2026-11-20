@@ -1,30 +1,31 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
 
+import { errorMessage } from '@/lib/api';
 import type { SocialKind } from '@/components/SocialIcon';
 import { useAuth } from '@/state/AuthContext';
 
-const MOCK_DELAY_MS = 900;
-
-/**
- * Google / Apple are simulated for now. Wire them to expo-auth-session (Google) and
- * expo-apple-authentication (Apple) plus the auth backend when it exists.
- */
+/** Google and Apple sign in through Supabase in the browser; phone opens the code screen. */
 export function useSocialSignIn() {
-  const { signIn } = useAuth();
+  const { signInWithProvider } = useAuth();
   const [loading, setLoading] = useState<SocialKind | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const pick = (kind: SocialKind) => {
+  const pick = async (kind: SocialKind) => {
+    setError(null);
     if (kind === 'phone') {
       router.push('/sign-in-phone');
       return;
     }
     setLoading(kind);
-    setTimeout(() => {
+    try {
+      await signInWithProvider(kind);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
       setLoading(null);
-      signIn(kind);
-    }, MOCK_DELAY_MS);
+    }
   };
 
-  return { loading, pick };
+  return { loading, error, pick };
 }

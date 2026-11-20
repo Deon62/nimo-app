@@ -1,127 +1,218 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { PlanId } from '@/data/plans';
-import { currentUser } from '@/data/user';
+import { api } from '@/lib/api';
+import { supabase } from '@/lib/supabase';
 import { maskPhone } from '@/utils/mpesa';
+import { useAuth } from './AuthContext';
 
 export interface Profile {
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  /** Local image URI picked by the user; replaced by an uploaded URL once the backend exists. */
+  /** Public URL of the uploaded photo, or null. */
   avatarUri: string | null;
 }
 
-export type CardBrand = 'Visa' | 'Mastercard' | 'Card';
-
-/** Only display details are kept. Full card numbers never live in app state. */
+/** Card saved by Paystack after a card payment. Only display details reach the app. */
 export interface CardMethod {
   id: string;
   kind: 'card';
-  brand: CardBrand;
+  brand: string;
   last4: string;
   expiry: string;
-  holder: string;
 }
 
-/** M-Pesa mobile money. The number receives the STK push (PIN prompt) when paying. */
+/** M-Pesa number that receives the PIN prompt (STK push). */
 export interface MpesaMethod {
   id: string;
   kind: 'mpesa';
-  /** International format without "+", e.g. 254712345678. */
+  /** 2547XXXXXXXX */
   phone: string;
 }
 
 export type PaymentMethod = CardMethod | MpesaMethod;
-type NewPaymentMethod = Omit<CardMethod, 'id'> | Omit<MpesaMethod, 'id'>;
-
 export type BillingPeriod = 'monthly' | 'yearly';
 
+interface ApiMethod {
+  id: string;
+  kind: 'card' | 'mpesa';
+  brand?: string;
+  last4?: string;
+  expiry?: string;
+  phone?: string;
+  is_default: boolean;
+}
+
 interface AccountValue {
+  /** True until the first load after sign-in finishes. */
+  loading: boolean;
   profile: Profile;
-  updateProfile: (changes: Partial<Profile>) => void;
+  updateProfile: (changes: Partial<Omit<Profile, 'avatarUri'>>) => Promise<void>;
+  setAvatar: (localUri: string | null) => Promise<void>;
 
   planId: PlanId;
-  billingPeriod: BillingPeriod;
-  subscribe: (planId: PlanId, period: BillingPeriod) => void;
+  billingPeriod: BillingPeriod | null;
+  /** ISO date the paid plan runs until. */
+  planEndsAt: string | null;
   canRecordCalls: boolean;
 
   paymentMethods: PaymentMethod[];
   defaultPaymentId: string | null;
-  addPaymentMethod: (method: NewPaymentMethod) => PaymentMethod;
-  removePaymentMethod: (id: string) => void;
-  setDefaultPayment: (id: string) => void;
+  addMpesaNumber: (phone: string) => Promise<PaymentMethod>;
+  removePaymentMethod: (id: string) => Promise<void>;
+  setDefaultPayment: (id: string) => Promise<void>;
+
+  /** Reloads plan and payment methods (after a payment, for example). */
+  refresh: () => Promise<void>;
 }
 
+const EMPTY_PROFILE: Profile = { firstName: '', lastName: '', email: '', phone: '', avatarUri: null };
 const AccountContext = createContext<AccountValue | null>(null);
 
-/**
- * In-memory account state: profile, subscription and saved cards.
- * Swap the setters for API calls (and a payment provider such as Stripe) later.
- */
+function toMethod(m: ApiMethod): PaymentMethod {
+  return m.kind === 'mpesa'
+    ? { id: m.id, kind: 'mpesa', phone: m.phone ?? '' }
+    : { id: m.id, kind: 'card', brand: m.brand ?? 'Card', last4: m.last4 ?? '', expiry: m.expiry ?? '' };
+}
+
+/** Profile from Supabase; plan, usage and payment methods from the Nimo API. */
 export function AccountProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<Profile>({
-    firstName: currentUser.firstName,
-    lastName: currentUser.lastName,
-    email: currentUser.email,
-    phone: currentUser.phone,
-    avatarUri: null,
-  });
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
   const [planId, setPlanId] = useState<PlanId>('free');
-  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>('monthly');
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [defaultPaymentId, setDefaultPaymentId] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod | null>(null);
+  const [planEndsAt, setPlanEndsAt] = useState<string | null>(null);
+  const [methods, setMethods] = useState<ApiMethod[]>([]);
 
-  const updateProfile = useCallback((changes: Partial<Profile>) => {
-    setProfile((prev) => ({ ...prev, ...changes }));
-  }, []);
-
-  const subscribe = useCallback((next: PlanId, period: BillingPeriod) => {
-    setPlanId(next);
-    setBillingPeriod(period);
-  }, []);
-
-  const addPaymentMethod = useCallback((method: NewPaymentMethod) => {
-    const created = { ...method, id: `pm-${Date.now()}` } as PaymentMethod;
-    setPaymentMethods((prev) => [...prev, created]);
-    setDefaultPaymentId((prev) => prev ?? created.id);
-    return created;
-  }, []);
-
-  const removePaymentMethod = useCallback((id: string) => {
-    setPaymentMethods((prev) => {
-      const next = prev.filter((m) => m.id !== id);
-      setDefaultPaymentId((current) => (current === id ? (next[0]?.id ?? null) : current));
-      return next;
+  const loadProfile = useCallback(async () => {
+    if (!session) return;
+    const { data } = await supabase
+      .from('profiles')
+      .select('first_name,last_name,phone,avatar_url')
+      .eq('id', session.user.id)
+      .maybeSingle();
+    const meta = session.user.user_metadata ?? {};
+    const [metaFirst = '', ...metaRest] = String(meta.full_name ?? meta.name ?? '').split(' ');
+    setProfile({
+      firstName: data?.first_name ?? meta.first_name ?? metaFirst,
+      lastName: data?.last_name ?? meta.last_name ?? metaRest.join(' '),
+      email: session.user.email ?? '',
+      phone: data?.phone ?? session.user.phone ?? '',
+      avatarUri: data?.avatar_url ?? meta.avatar_url ?? null,
     });
+  }, [session]);
+
+  const refresh = useCallback(async () => {
+    if (!session) return;
+    const [plan, list] = await Promise.all([
+      api<{ plan_id: PlanId; period: BillingPeriod | null; current_period_end: string | null }>('/billing/me'),
+      api<ApiMethod[]>('/billing/payment-methods'),
+    ]);
+    setPlanId(plan.plan_id);
+    setBillingPeriod(plan.period);
+    setPlanEndsAt(plan.plan_id === 'free' ? null : plan.current_period_end);
+    setMethods(list);
+  }, [session]);
+
+  useEffect(() => {
+    if (!userId) {
+      setProfile(EMPTY_PROFILE);
+      setPlanId('free');
+      setMethods([]);
+      setLoading(true);
+      return;
+    }
+    let alive = true;
+    Promise.allSettled([loadProfile(), refresh()]).finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+    // Reload only when the signed-in user changes, not on every token refresh.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const updateProfile = useCallback<AccountValue['updateProfile']>(
+    async (changes) => {
+      if (!session) return;
+      const row: Record<string, string> = {};
+      if (changes.firstName !== undefined) row.first_name = changes.firstName;
+      if (changes.lastName !== undefined) row.last_name = changes.lastName;
+      if (changes.phone !== undefined) row.phone = changes.phone;
+      if (Object.keys(row).length) {
+        const { error } = await supabase.from('profiles').update(row).eq('id', session.user.id);
+        if (error) throw error;
+      }
+      if (changes.email && changes.email !== session.user.email) {
+        // Supabase emails a confirmation link to the new address before switching.
+        const { error } = await supabase.auth.updateUser({ email: changes.email });
+        if (error) throw error;
+      }
+      setProfile((prev) => ({ ...prev, ...changes, email: session.user.email ?? prev.email }));
+    },
+    [session],
+  );
+
+  const setAvatar = useCallback(
+    async (localUri: string | null) => {
+      if (!session) return;
+      let url: string | null = null;
+      if (localUri) {
+        const blob = await (await fetch(localUri)).arrayBuffer();
+        const path = `${session.user.id}/avatar-${Date.now()}.jpg`;
+        const { error } = await supabase.storage
+          .from('avatars')
+          .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+        if (error) throw error;
+        url = supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+      }
+      const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', session.user.id);
+      if (error) throw error;
+      setProfile((prev) => ({ ...prev, avatarUri: url }));
+    },
+    [session],
+  );
+
+  const addMpesaNumber = useCallback(async (phone: string) => {
+    const created = await api<ApiMethod>('/billing/payment-methods/mpesa', { method: 'POST', json: { phone } });
+    setMethods((prev) => (prev.some((m) => m.id === created.id) ? prev : [...prev, created]));
+    return toMethod(created);
   }, []);
 
-  const value = useMemo(
+  const removePaymentMethod = useCallback(
+    async (id: string) => {
+      await api(`/billing/payment-methods/${id}`, { method: 'DELETE' });
+      await refresh();
+    },
+    [refresh],
+  );
+
+  const setDefaultPayment = useCallback(async (id: string) => {
+    await api(`/billing/payment-methods/${id}/default`, { method: 'POST' });
+    setMethods((prev) => prev.map((m) => ({ ...m, is_default: m.id === id })));
+  }, []);
+
+  const value = useMemo<AccountValue>(
     () => ({
+      loading,
       profile,
       updateProfile,
+      setAvatar,
       planId,
       billingPeriod,
-      subscribe,
+      planEndsAt,
       canRecordCalls: planId !== 'free',
-      paymentMethods,
-      defaultPaymentId,
-      addPaymentMethod,
+      paymentMethods: methods.map(toMethod),
+      defaultPaymentId: methods.find((m) => m.is_default)?.id ?? methods[0]?.id ?? null,
+      addMpesaNumber,
       removePaymentMethod,
-      setDefaultPayment: setDefaultPaymentId,
+      setDefaultPayment,
+      refresh,
     }),
-    [
-      profile,
-      updateProfile,
-      planId,
-      billingPeriod,
-      subscribe,
-      paymentMethods,
-      defaultPaymentId,
-      addPaymentMethod,
-      removePaymentMethod,
-    ],
+    [loading, profile, updateProfile, setAvatar, planId, billingPeriod, planEndsAt, methods, addMpesaNumber, removePaymentMethod, setDefaultPayment, refresh],
   );
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }
@@ -140,5 +231,5 @@ export function methodLabel(method: PaymentMethod): string {
 
 /** Secondary line: card expiry, or the payment type for M-Pesa. */
 export function methodDetail(method: PaymentMethod): string {
-  return method.kind === 'card' ? `Expires ${method.expiry}` : 'Mobile money';
+  return method.kind === 'card' ? (method.expiry ? `Expires ${method.expiry}` : 'Card') : 'Mobile money';
 }

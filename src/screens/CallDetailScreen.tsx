@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { History, Lock, Phone, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,11 +23,28 @@ import { formatCallDate, formatDuration } from '@/utils/format';
 export function CallDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { bottom } = useSafeAreaInsets();
-  const { getCall, removeCall } = useCallHistory();
+  const { getCall, removeCall, loadCall } = useCallHistory();
+  const [loading, setLoading] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { callAgent } = useActiveCall();
   const record = getCall(id);
   const agent = getAgent(record?.agentId);
+
+  useEffect(() => {
+    if (!id) return;
+    loadCall(id)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [id, loadCall]);
+
+  if (!record && loading) {
+    return (
+      <View style={styles.screen}>
+        <ScreenHeader />
+        <ActivityIndicator color={colors.ink} style={styles.spinner} />
+      </View>
+    );
+  }
 
   if (!record || !agent) {
     return (
@@ -78,7 +95,6 @@ export function CallDetailScreen() {
               <RecordingPlayer
                 callId={record.id}
                 agent={agent}
-                transcript={record.transcript}
                 durationSeconds={record.durationSeconds}
               />
             ) : (
@@ -90,6 +106,22 @@ export function CallDetailScreen() {
                 onPress={() => router.push('/plans')}
               />
             )}
+          </View>
+        )}
+
+        {record.transcript.length > 0 && (
+          <View style={styles.recording}>
+            <AppText variant="footnote" style={styles.kicker}>
+              TRANSCRIPT
+            </AppText>
+            {record.transcript.map((line, i) => (
+              <View key={i} style={styles.line}>
+                <AppText variant="caption" weight="600" tone="secondary">
+                  {line.speaker === 'user' ? 'YOU' : agent.name.toUpperCase()}
+                </AppText>
+                <AppText variant="body">{line.text}</AppText>
+              </View>
+            ))}
           </View>
         )}
 
@@ -114,7 +146,7 @@ export function CallDetailScreen() {
           setConfirmDelete(false);
           if (router.canGoBack()) router.back();
           else router.replace('/calls');
-          removeCall(record.id);
+          removeCall(record.id).catch(() => {});
         }}
       />
     </View>
@@ -130,4 +162,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   recording: { gap: spacing.md },
   kicker: { letterSpacing: 0.6, color: colors.text.tertiary },
+  line: { gap: 2 },
+  spinner: { marginTop: spacing.huge },
 });

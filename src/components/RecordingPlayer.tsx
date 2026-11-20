@@ -1,9 +1,10 @@
-import { StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Pause, Play } from 'lucide-react-native';
 
 import type { Agent } from '@/data/agents';
-import type { TranscriptLine } from '@/data/calls';
-import { lineForAgent, useVoicePreview, type SpokenLine } from '@/state/VoicePreviewContext';
+import { api } from '@/lib/api';
+import { useVoicePreview } from '@/state/VoicePreviewContext';
 import { colors } from '@/theme';
 import { withAlpha } from '@/utils/color';
 import { formatDuration } from '@/utils/format';
@@ -11,7 +12,6 @@ import { AppText } from './AppText';
 import { PressableScale } from './PressableScale';
 
 const BARS = 36;
-const CALLER_VOICE = { pitch: 1.05, rate: 1.02, language: 'en-US' };
 
 // Deterministic, natural-looking waveform heights for a given call.
 function heights(seed: string): number[] {
@@ -28,30 +28,49 @@ function heights(seed: string): number[] {
 interface RecordingPlayerProps {
   callId: string;
   agent: Agent;
-  transcript: TranscriptLine[];
   durationSeconds: number;
 }
 
-/** Plays back a recorded call. Audio is approximated with on-device voices until real recordings exist. */
-export function RecordingPlayer({ callId, agent, transcript, durationSeconds }: RecordingPlayerProps) {
+/** Plays back a recorded call: both sides of each turn, in order, from secure short-lived links. */
+export function RecordingPlayer({ callId, agent, durationSeconds }: RecordingPlayerProps) {
   const { playingId, lineIndex, toggleScript } = useVoicePreview();
+  const [segments, setSegments] = useState<string[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [empty, setEmpty] = useState(false);
   const id = `recording-${callId}`;
   const playing = playingId === id;
-  const lines: SpokenLine[] = transcript.map((l) =>
-    l.speaker === 'agent' ? lineForAgent(agent, l.text) : { text: l.text, ...CALLER_VOICE },
-  );
-  const progress = playing && lines.length ? (lineIndex + 1) / lines.length : 0;
+  const progress = playing && segments?.length ? (lineIndex + 1) / segments.length : 0;
   const bars = heights(callId);
+
+  const onPress = async () => {
+    if (playing || segments) {
+      toggleScript(id, segments ?? []);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api<{ segments: string[] }>(`/calls/${callId}/recording`);
+      setSegments(res.segments);
+      setEmpty(res.segments.length === 0);
+      toggleScript(id, res.segments);
+    } catch {
+      setEmpty(true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.player}>
       <PressableScale
-        onPress={() => toggleScript(id, lines)}
+        onPress={onPress}
         accessibilityLabel={playing ? 'Pause recording' : 'Play recording'}
         activeScale={0.92}
         style={[styles.play, { backgroundColor: agent.tone.foreground }]}
       >
-        {playing ? (
+        {loading ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : playing ? (
           <Pause size={18} color="#FFFFFF" fill="#FFFFFF" strokeWidth={1.5} />
         ) : (
           <Play size={18} color="#FFFFFF" fill="#FFFFFF" strokeWidth={1.5} style={styles.playIcon} />
@@ -72,7 +91,7 @@ export function RecordingPlayer({ callId, agent, transcript, durationSeconds }: 
         ))}
       </View>
       <AppText variant="footnote" tone="secondary" style={styles.time}>
-        {formatDuration(durationSeconds)}
+        {empty ? 'No audio' : formatDuration(durationSeconds)}
       </AppText>
     </View>
   );

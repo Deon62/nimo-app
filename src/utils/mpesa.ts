@@ -1,4 +1,4 @@
-import { digitsOnly } from './card';
+import { digitsOnly } from './digits';
 
 /** Mock exchange rate used to show M-Pesa amounts in shillings until real pricing exists. */
 export const USD_TO_KES = 129;

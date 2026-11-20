@@ -14,13 +14,16 @@ import { PeriodToggle } from '@/components/PeriodToggle';
 import { goBackOr, ScreenHeader } from '@/components/ScreenHeader';
 import { Separator } from '@/components/Separator';
 import { formatMoney, getPlan, priceFor, YEARLY_DISCOUNT } from '@/data/plans';
-import { methodLabel, useAccount, type BillingPeriod } from '@/state/AccountContext';
+import { errorMessage } from '@/lib/api';
+import { payWithMpesa, payWithNewCard, payWithSavedCard } from '@/lib/payments';
+import { methodLabel, useAccount, type BillingPeriod, type PaymentMethod } from '@/state/AccountContext';
 import { withAlpha } from '@/utils/color';
 import { toKes } from '@/utils/mpesa';
 import { colors, screenPadding, spacing } from '@/theme';
 
-const PROCESSING_MS = 1400;
-const MPESA_PROMPT_MS = 3500;
+/** Pay with a card entered on Paystack's page (it's saved afterwards). */
+const NEW_CARD = 'new-card';
+const NEW_CARD_METHOD = { kind: 'card', brand: 'Card' } as const;
 
 function renewalDate(period: BillingPeriod): string {
   const d = new Date();
@@ -43,18 +46,20 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
 }
 
 /**
- * Plan checkout. Payment is simulated; when billing goes live, `pay` calls the
- * backend to create the subscription with the payment provider.
+ * Plan checkout. Cards pay on Paystack (or one tap with a saved card); M-Pesa sends a PIN prompt.
+ * Plans don't renew automatically: each payment buys a month or a year.
  */
 export function CheckoutScreen() {
   const { plan: planParam } = useLocalSearchParams<{ plan: string }>();
   const { bottom } = useSafeAreaInsets();
   const account = useAccount();
   const plan = getPlan(planParam);
-  const [period, setPeriod] = useState<BillingPeriod>(account.billingPeriod);
+  const [period, setPeriod] = useState<BillingPeriod>(account.billingPeriod ?? 'monthly');
   const [cardId, setCardId] = useState<string | null>(null);
   const [choosingCard, setChoosingCard] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [promptKes, setPromptKes] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   if (!plan) {
@@ -68,24 +73,28 @@ export function CheckoutScreen() {
 
   const free = plan.id === 'free';
   const current = account.planId === plan.id && (free || account.billingPeriod === period);
-  const card =
-    account.paymentMethods.find((m) => m.id === (cardId ?? account.defaultPaymentId)) ?? account.paymentMethods[0];
+  const chosenId = cardId ?? account.defaultPaymentId ?? NEW_CARD;
+  const card: PaymentMethod | null = account.paymentMethods.find((m) => m.id === chosenId) ?? null;
   const total = priceFor(plan, period);
   const monthlyEquivalent = period === 'yearly' ? total / 12 : total;
 
   const mpesa = card?.kind === 'mpesa';
 
-  // Simulated: a card charge, or an M-Pesa STK push that the user approves with their PIN.
-  const pay = () => {
+  const pay = async () => {
     setProcessing(true);
-    setTimeout(
-      () => {
-        account.subscribe(plan.id, period);
-        setProcessing(false);
-        setDone(true);
-      },
-      mpesa ? MPESA_PROMPT_MS : PROCESSING_MS,
-    );
+    setError(null);
+    try {
+      if (card?.kind === 'mpesa') await payWithMpesa(plan.id, period, card.phone, setPromptKes);
+      else if (card) await payWithSavedCard(plan.id, period, card.id);
+      else await payWithNewCard(plan.id, period);
+      await account.refresh().catch(() => {});
+      setDone(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setProcessing(false);
+      setPromptKes(null);
+    }
   };
 
   if (done) {
@@ -103,7 +112,7 @@ export function CheckoutScreen() {
               {free ? 'You’re on Free' : `Welcome to ${plan.name}`}
             </AppText>
             <AppText variant="subhead" tone="secondary" align="center">
-              {free ? 'Paid features have been turned off.' : `Renews ${renewalDate(period)}.`}
+              {free ? 'Paid features have been turned off.' : `Active until ${renewalDate(period)}.`}
             </AppText>
           </Animated.View>
         </View>
@@ -135,7 +144,17 @@ export function CheckoutScreen() {
 
         {free ? (
           <AppText variant="body" tone="secondary">
-            Switching to Free turns off call recording and limits calls to 10 minutes a day.
+            {account.planId === 'free'
+              ? 'You’re on Free: 10 minutes of calls a day.'
+              : `Plans don’t renew on their own. Your plan runs until ${
+                  account.planEndsAt
+                    ? new Date(account.planEndsAt).toLocaleDateString('en-GB', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : 'the end of the period'
+                }, then you’re on Free.`}
           </AppText>
         ) : (
           <>
@@ -143,13 +162,11 @@ export function CheckoutScreen() {
               <Row label={`${plan.name} · ${period === 'monthly' ? 'Monthly' : 'Yearly'}`} value={formatMoney(total)} />
               <Separator />
               <Row label="Due today" value={formatMoney(total)} strong />
-              {mpesa && (
-                <AppText variant="footnote" tone="secondary" style={styles.kes}>
-                  About {toKes(total)} via M-Pesa
-                </AppText>
-              )}
+              <AppText variant="footnote" tone="secondary" style={styles.kes}>
+                Charged as about {toKes(total)}{mpesa ? ' via M-Pesa' : ''}
+              </AppText>
               <AppText variant="footnote" tone="secondary">
-                Renews {renewalDate(period)}. Cancel anytime.
+                Lasts until {renewalDate(period)}. Doesn’t renew automatically.
               </AppText>
             </View>
 
@@ -157,33 +174,32 @@ export function CheckoutScreen() {
               <AppText variant="footnote" tone="tertiary" style={styles.kicker}>
                 PAY WITH
               </AppText>
-              {card ? (
+              <Pressable
+                onPress={() => setChoosingCard(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Pay with ${card ? methodLabel(card) : 'card'}. Change`}
+              >
+                {({ pressed }) => (
+                  <View style={[styles.cardRow, pressed && styles.pressed]}>
+                    <CardChip method={card ?? NEW_CARD_METHOD} />
+                    <AppText variant="body" weight="500" style={styles.flex}>
+                      {card ? methodLabel(card) : 'Card'}
+                    </AppText>
+                    <AppText variant="subhead" weight="600">
+                      Change
+                    </AppText>
+                  </View>
+                )}
+              </Pressable>
+              {account.paymentMethods.length === 0 && (
                 <Pressable
-                  onPress={() => setChoosingCard(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Pay with ${methodLabel(card)}. Change`}
-                >
-                  {({ pressed }) => (
-                    <View style={[styles.cardRow, pressed && styles.pressed]}>
-                      <CardChip method={card} />
-                      <AppText variant="body" weight="500" style={styles.flex}>
-                        {methodLabel(card)}
-                      </AppText>
-                      <AppText variant="subhead" weight="600">
-                        Change
-                      </AppText>
-                    </View>
-                  )}
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={() => router.push('/payment-methods' as Href)}
+                  onPress={() => router.push('/payment-methods/mpesa' as Href)}
                   accessibilityRole="link"
                   hitSlop={8}
                   style={({ pressed }) => [styles.addLink, pressed && styles.pressed]}
                 >
                   <AppText variant="body" weight="600" align="center" style={styles.addLinkText}>
-                    Add a card or M-Pesa
+                    Pay with M-Pesa instead
                   </AppText>
                 </Pressable>
               )}
@@ -192,22 +208,27 @@ export function CheckoutScreen() {
         )}
 
         <View style={styles.footer}>
-          {processing && mpesa && (
+          {processing && promptKes !== null && (
             <Animated.View entering={FadeIn.duration(250)} style={styles.prompt}>
               <AppText variant="subhead" weight="600" align="center">
                 Check your phone
               </AppText>
               <AppText variant="footnote" tone="secondary" align="center">
-                Enter your M-Pesa PIN to pay {toKes(total)}.
+                Enter your M-Pesa PIN to pay KES {promptKes.toLocaleString('en-KE')}.
               </AppText>
             </Animated.View>
           )}
+          {error && !processing ? (
+            <AppText variant="footnote" tone="danger" align="center">
+              {error}
+            </AppText>
+          ) : null}
           <Button
-            label={current ? 'Current plan' : free ? 'Switch to Free' : `Pay ${formatMoney(total)}`}
+            label={current ? 'Current plan' : free ? 'Got it' : `Pay ${formatMoney(total)}`}
             size="large"
             loading={processing}
-            disabled={current || processing || (!free && !card)}
-            onPress={free ? () => (account.subscribe('free', 'monthly'), setDone(true)) : pay}
+            disabled={current || processing}
+            onPress={free ? () => goBackOr('/plans') : pay}
           />
         </View>
       </ScrollView>
@@ -222,7 +243,7 @@ export function CheckoutScreen() {
             selected: m.id === card?.id,
             onPress: () => setCardId(m.id),
           })),
-          { label: 'Add a card', onPress: () => router.push('/payment-methods/add') },
+          { label: 'New card', selected: !card, onPress: () => setCardId(NEW_CARD) },
           { label: 'Add M-Pesa', onPress: () => router.push('/payment-methods/mpesa') },
         ]}
       />

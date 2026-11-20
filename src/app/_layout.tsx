@@ -77,7 +77,10 @@ function RootStack() {
         <Stack.Screen name="plans" />
         <Stack.Screen name="billing" />
         <Stack.Screen name="story/[id]" />
+        <Stack.Screen name="payment-complete" />
       </Stack.Protected>
+      {/* Email links (confirm / reset password) work signed in or out. */}
+      <Stack.Screen name="verify" />
     </Stack>
   );
 }

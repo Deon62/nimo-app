@@ -19,14 +19,14 @@ import { colors, screenPadding, spacing } from '@/theme';
 export function ProfileScreen() {
   const { top } = useSafeAreaInsets();
   const bottomInset = useTabBarInset();
-  const { profile, updateProfile, planId, paymentMethods, defaultPaymentId } = useAccount();
+  const { profile, setAvatar, planId, paymentMethods, defaultPaymentId } = useAccount();
   const pickPhoto = usePickPhoto();
   const plan = getPlan(planId);
   const defaultCard = paymentMethods.find((m) => m.id === defaultPaymentId);
 
   const changePhoto = async () => {
     const uri = await pickPhoto();
-    if (uri) updateProfile({ avatarUri: uri });
+    if (uri) await setAvatar(uri).catch(() => {});
   };
 
   return (

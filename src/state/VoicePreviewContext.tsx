@@ -1,93 +1,90 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import * as Speech from 'expo-speech';
+import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
 
 import type { Agent } from '@/data/agents';
-
-export interface SpokenLine {
-  text: string;
-  pitch: number;
-  rate: number;
-  language: string;
-}
+import { apiUrl } from '@/lib/api';
 
 interface VoicePreviewValue {
-  /** Id of whatever is playing: an agent id for voice previews, or a sample-call id. */
+  /** Id of whatever is playing: an agent id for voice previews, or a sample / recording id. */
   playingId: string | null;
-  /** Index of the line currently being spoken within the playing script. */
+  /** Index of the clip currently playing within the playlist. */
   lineIndex: number;
+  /** True while the current clip is loading. */
+  buffering: boolean;
   toggle: (agent: Agent) => void;
-  toggleScript: (id: string, lines: SpokenLine[]) => void;
+  /** Plays audio clips back to back (sample calls, call recordings). */
+  toggleScript: (id: string, urls: string[]) => void;
   stop: () => void;
 }
 
 const VoicePreviewContext = createContext<VoicePreviewValue | null>(null);
 
-export function lineForAgent(agent: Agent, text: string = agent.voice.sample): SpokenLine {
-  return { text, pitch: agent.voice.pitch, rate: agent.voice.rate, language: agent.voice.language };
-}
+export const previewUrl = (agentId: string) => apiUrl(`/agents/${agentId}/preview`);
+export const sampleLineUrl = (agentId: string, line: number) => apiUrl(`/agents/${agentId}/sample/${line}`);
 
-/**
- * Plays voice previews and pre-recorded sample calls, one at a time.
- * Uses on-device text-to-speech for now; swap `speakLine` for recorded audio from the
- * backend (e.g. OpenAI voice clips) without touching the UI.
- */
+/** Plays ElevenLabs voice previews, sample calls and recordings, one at a time. */
 export function VoicePreviewProvider({ children }: { children: ReactNode }) {
+  const player = useAudioPlayer(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [lineIndex, setLineIndex] = useState(0);
-  const token = useRef(0);
+  const [buffering, setBuffering] = useState(false);
+  const queue = useRef<{ id: string; urls: string[]; index: number } | null>(null);
+
+  const playIndex = useCallback(
+    (index: number) => {
+      const q = queue.current;
+      if (!q) return;
+      if (index >= q.urls.length) {
+        queue.current = null;
+        setPlayingId(null);
+        setLineIndex(0);
+        return;
+      }
+      q.index = index;
+      setLineIndex(index);
+      setBuffering(true);
+      player.replace({ uri: q.urls[index] });
+      player.play();
+    },
+    [player],
+  );
+
+  useEffect(() => {
+    const sub = player.addListener('playbackStatusUpdate', (status) => {
+      if (status.playing) setBuffering(false);
+      if (status.didJustFinish && queue.current) playIndex(queue.current.index + 1);
+    });
+    return () => sub.remove();
+  }, [player, playIndex]);
 
   const stop = useCallback(() => {
-    token.current += 1;
+    queue.current = null;
     setPlayingId(null);
     setLineIndex(0);
-    void Speech.stop();
-  }, []);
+    setBuffering(false);
+    player.pause();
+  }, [player]);
 
   const toggleScript = useCallback(
-    (id: string, lines: SpokenLine[]) => {
+    (id: string, urls: string[]) => {
       if (playingId === id) {
         stop();
         return;
       }
-      void Speech.stop();
-      const current = ++token.current;
+      if (!urls.length) return;
+      void setAudioModeAsync({ playsInSilentMode: true }).catch(() => {});
+      queue.current = { id, urls, index: 0 };
       setPlayingId(id);
-      setLineIndex(0);
-
-      const speakLine = (i: number) => {
-        if (token.current !== current) return;
-        if (i >= lines.length) {
-          setPlayingId(null);
-          setLineIndex(0);
-          return;
-        }
-        setLineIndex(i);
-        const line = lines[i];
-        const next = () => {
-          setTimeout(() => speakLine(i + 1), 350);
-        };
-        Speech.speak(line.text, {
-          pitch: line.pitch,
-          rate: line.rate,
-          language: line.language,
-          onDone: next,
-          onError: () => {
-            if (token.current === current) setPlayingId(null);
-          },
-        });
-      };
-      speakLine(0);
+      playIndex(0);
     },
-    [playingId, stop],
+    [playingId, stop, playIndex],
   );
 
-  const toggle = useCallback((agent: Agent) => toggleScript(agent.id, [lineForAgent(agent)]), [toggleScript]);
-
-  useEffect(() => () => void Speech.stop(), []);
+  const toggle = useCallback((agent: Agent) => toggleScript(agent.id, [previewUrl(agent.id)]), [toggleScript]);
 
   const value = useMemo(
-    () => ({ playingId, lineIndex, toggle, toggleScript, stop }),
-    [playingId, lineIndex, toggle, toggleScript, stop],
+    () => ({ playingId, lineIndex, buffering, toggle, toggleScript, stop }),
+    [playingId, lineIndex, buffering, toggle, toggleScript, stop],
   );
   return <VoicePreviewContext.Provider value={value}>{children}</VoicePreviewContext.Provider>;
 }

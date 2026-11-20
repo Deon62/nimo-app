@@ -113,6 +113,7 @@ export const settingsSections: SettingsSection[] = [
         items: [
           { kind: 'link', id: 'export', label: 'Download my data' },
           { kind: 'link', id: 'delete', label: 'Delete call history', destructive: true },
+          { kind: 'link', id: 'delete-account', label: 'Delete account', destructive: true },
         ],
       },
     ],

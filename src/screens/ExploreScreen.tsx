@@ -13,7 +13,6 @@ import { OptionSheet } from '@/components/OptionSheet';
 import { Separator } from '@/components/Separator';
 import { SkeletonRows } from '@/components/Skeleton';
 import { agentCategories, searchAgents, type Agent } from '@/data/agents';
-import { useSimulatedLoading } from '@/hooks/useSimulatedLoading';
 import { useTabBarInset } from '@/hooks/useTabBarInset';
 import { useActiveCall } from '@/state/ActiveCallContext';
 import { colors, screenPadding, spacing } from '@/theme';
@@ -29,7 +28,8 @@ export function ExploreScreen() {
   const { width } = useWindowDimensions();
   const { focus } = useLocalSearchParams<{ focus?: string }>();
   const { callAgent } = useActiveCall();
-  const loading = useSimulatedLoading();
+  // The agent catalogue ships with the app, so there's nothing to wait for.
+  const loading = false;
 
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<Category>('All');

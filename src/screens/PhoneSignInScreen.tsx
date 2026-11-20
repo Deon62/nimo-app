@@ -15,26 +15,26 @@ import { AppText } from '@/components/AppText';
 import { Button } from '@/components/Button';
 import { FormField } from '@/components/FormField';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { useAccount } from '@/state/AccountContext';
+import { errorMessage } from '@/lib/api';
 import { useAuth } from '@/state/AuthContext';
 import { colors, screenPadding, spacing } from '@/theme';
-import { digitsOnly } from '@/utils/card';
+import { digitsOnly } from '@/utils/digits';
 import { formatKenyanPhone, maskPhone, normaliseKenyanPhone } from '@/utils/mpesa';
 
 const CODE_LENGTH = 6;
-const RESEND_SECONDS = 30;
+const RESEND_SECONDS = 60;
 
-/** Mobile number sign-in: number, then a 6-digit SMS code (simulated: any code works). */
+/** Mobile number sign-in through Supabase: number, then the 6-digit SMS code. */
 export function PhoneSignInScreen() {
   const { bottom } = useSafeAreaInsets();
-  const { signIn } = useAuth();
-  const { updateProfile } = useAccount();
+  const { sendPhoneCode, verifyPhoneCode } = useAuth();
   const [phone, setPhone] = useState('');
   const [step, setStep] = useState<'number' | 'code'>('number');
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [resendIn, setResendIn] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const codeRef = useRef<TextInputInstance>(null);
   const normalised = normaliseKenyanPhone(phone);
 
@@ -44,25 +44,34 @@ export function PhoneSignInScreen() {
     return () => clearTimeout(t);
   }, [resendIn]);
 
-  const sendCode = () => {
+  const sendCode = async () => {
     setSubmitted(true);
     if (!normalised) return;
     setBusy(true);
-    setTimeout(() => {
-      setBusy(false);
+    setError(null);
+    try {
+      await sendPhoneCode(`+${normalised}`);
       setStep('code');
       setCode('');
       setResendIn(RESEND_SECONDS);
-    }, 800);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const verify = (value: string) => {
+  const verify = async (value: string) => {
     if (value.length !== CODE_LENGTH || !normalised) return;
     setBusy(true);
-    setTimeout(() => {
-      updateProfile({ phone: `+${normalised}` });
-      signIn('phone');
-    }, 800);
+    setError(null);
+    try {
+      await verifyPhoneCode(`+${normalised}`, value);
+    } catch (e) {
+      setError(errorMessage(e));
+      setCode('');
+      setBusy(false);
+    }
   };
 
   const onCode = (v: string) => {
@@ -99,6 +108,11 @@ export function PhoneSignInScreen() {
               error={submitted && !normalised ? 'Enter a valid mobile number' : undefined}
             />
             <View style={styles.footer}>
+              {error ? (
+                <AppText variant="footnote" tone="danger" align="center">
+                  {error}
+                </AppText>
+              ) : null}
               <Button label="Send code" size="large" onPress={sendCode} loading={busy} />
             </View>
           </>
@@ -140,8 +154,7 @@ export function PhoneSignInScreen() {
             <Pressable
               onPress={() => {
                 if (resendIn > 0) return;
-                setCode('');
-                setResendIn(RESEND_SECONDS);
+                void sendCode();
               }}
               disabled={resendIn > 0}
               accessibilityRole="button"
@@ -153,9 +166,11 @@ export function PhoneSignInScreen() {
             </Pressable>
 
             <View style={styles.footer}>
-              <AppText variant="footnote" tone="tertiary" align="center">
-                Test mode: any 6 digits works.
-              </AppText>
+              {error ? (
+                <AppText variant="footnote" tone="danger" align="center">
+                  {error}
+                </AppText>
+              ) : null}
               <Button label="Continue" size="large" onPress={() => verify(code)} loading={busy} />
             </View>
           </>

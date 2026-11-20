@@ -39,7 +39,14 @@
           "cameraPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Nimo uses the microphone so you can talk on calls."
+        }
+      ],
+      "expo-web-browser"
     ],
     "scheme": "nimo",
     "experiments": {
