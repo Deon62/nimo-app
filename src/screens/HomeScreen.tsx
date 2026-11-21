@@ -34,7 +34,7 @@ export function HomeScreen() {
   const { profile } = useAccount();
   const { callAgent } = useActiveCall();
   const sampleAgent = getAgent(featuredAgentId) ?? agents[0];
-  const suggested = useMemo(contactsToTry, []);
+  const suggested = useMemo(() => contactsToTry(), []);
 
   return (
     <ScrollView
