@@ -66,6 +66,8 @@ interface TurnResponse {
   reply: string | null;
   audio_base64: string | null;
   audio_mime: string | null;
+  /** The caller asked to hang up: play the goodbye, then end the call. */
+  end_call?: boolean;
 }
 
 /** Voice-activity detection, in dBFS from the recorder's meter. */
@@ -194,6 +196,8 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
     [patch, player, stopRecording],
   );
 
+  /** `end` is defined further down; the agent hangs up through this ref. */
+  const endRef = useRef<() => void>(() => {});
   // `listen` and `sendTurn` call each other, so they share a ref.
   const listenRef = useRef<() => void>(() => {});
 
@@ -224,7 +228,14 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
         const finished = () => {
           if (token.current !== mine) return;
           patch((prev) => ({ caption: null, transcript: [...prev.transcript, agentLine] }));
-          listenRef.current();
+          if (!res.end_call) {
+            listenRef.current();
+            return;
+          }
+          // A short beat after the goodbye (and lets the goodbye land in the transcript), then hang up.
+          setTimeout(() => {
+            if (token.current === mine) endRef.current();
+          }, 400);
         };
         if (res.audio_base64) await playBase64(res.audio_base64, res.audio_mime ?? 'audio/mpeg', finished);
         else finished();
@@ -386,6 +397,10 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
     });
     patch({ phase: 'ended', caption: null, video: false, elapsedSeconds: durationSeconds });
   }, [patch, player, stopRecording]);
+
+  useLayoutEffect(() => {
+    endRef.current = end;
+  }, [end]);
 
   /** Removes an ended call from memory (after the "Call ended" moment). */
   const dismiss = useCallback(() => {
