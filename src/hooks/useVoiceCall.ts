@@ -239,7 +239,8 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
       if (token.current !== mine || callRef.current?.muted) return;
       recorder.record();
       recordingActive.current = true;
-    } catch {
+    } catch (e) {
+      console.warn('[call] microphone failed to start', e);
       fail('Couldn’t use the microphone.');
       return;
     }
