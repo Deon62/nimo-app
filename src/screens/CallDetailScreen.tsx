@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { History, Lock, Phone, Trash2 } from 'lucide-react-native';
+import { History, Lock, MessageSquareText, Phone, Trash2 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AgentAvatar } from '@/components/AgentAvatar';
@@ -110,14 +110,13 @@ export function CallDetailScreen() {
             <AppText variant="footnote" style={styles.kicker}>
               TRANSCRIPT
             </AppText>
-            {record.transcript.map((line, i) => (
-              <View key={i} style={styles.line}>
-                <AppText variant="caption" weight="600" tone="secondary">
-                  {line.speaker === 'user' ? 'YOU' : agent.name.toUpperCase()}
-                </AppText>
-                <AppText variant="body">{line.text}</AppText>
-              </View>
-            ))}
+            <ListRow
+              type="link"
+              icon={MessageSquareText}
+              label="View transcript"
+              detail={`${record.transcript.length} ${record.transcript.length === 1 ? 'message' : 'messages'}`}
+              onPress={() => router.push({ pathname: '/call-history/transcript/[id]', params: { id: record.id } })}
+            />
           </View>
         )}
 
@@ -158,6 +157,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   recording: { gap: spacing.md },
   kicker: { letterSpacing: 0.6, color: colors.text.tertiary },
-  line: { gap: 2 },
   spinner: { marginTop: spacing.huge },
 });

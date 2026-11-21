@@ -67,6 +67,7 @@ function RootStack() {
           }}
         />
         <Stack.Screen name="call-history/[id]" />
+        <Stack.Screen name="call-history/transcript/[id]" />
         <Stack.Screen name="settings/[section]" />
         <Stack.Screen name="settings/index" />
         <Stack.Screen name="profile/edit" />
