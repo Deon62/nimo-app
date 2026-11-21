@@ -1,25 +1,40 @@
+import { Fragment, useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { UserAvatar } from '@/components/AgentAvatar';
+import { AgentCard } from '@/components/AgentCard';
 import { AgentStories } from '@/components/AgentStories';
 import { AppText } from '@/components/AppText';
-import { IdeaTiles } from '@/components/IdeaTiles';
 import { PressableScale } from '@/components/PressableScale';
 import { SampleCallCard } from '@/components/SampleCallCard';
-import { agents, featuredAgentId, getAgent } from '@/data/agents';
-import { ideas } from '@/data/ideas';
+import { SectionHeader } from '@/components/SectionHeader';
+import { Separator } from '@/components/Separator';
+import { agents, featuredAgentId, getAgent, type Agent } from '@/data/agents';
 import { useTabBarInset } from '@/hooks/useTabBarInset';
 import { useAccount } from '@/state/AccountContext';
+import { useActiveCall } from '@/state/ActiveCallContext';
 import { colors, screenPadding, spacing } from '@/theme';
 import { greetingFor } from '@/utils/format';
+
+const CONTACTS_TO_TRY = 4;
+
+/** A few contacts to suggest, changing each day; available ones first, never the featured one. */
+function contactsToTry(): Agent[] {
+  const day = Math.floor(Date.now() / 86_400_000);
+  const pool = agents.filter((a) => a.id !== featuredAgentId && a.availability !== 'offline');
+  const start = day % Math.max(pool.length, 1);
+  return [...pool.slice(start), ...pool.slice(0, start)].slice(0, CONTACTS_TO_TRY);
+}
 
 export function HomeScreen() {
   const { top } = useSafeAreaInsets();
   const bottomInset = useTabBarInset();
   const { profile } = useAccount();
+  const { callAgent } = useActiveCall();
   const sampleAgent = getAgent(featuredAgentId) ?? agents[0];
+  const suggested = useMemo(contactsToTry, []);
 
   return (
     <ScrollView
@@ -56,10 +71,17 @@ export function HomeScreen() {
       </View>
 
       <View style={[styles.gutter, styles.section]}>
-        <AppText variant="section" accessibilityRole="header" style={styles.sectionTitle}>
-          Things to try
-        </AppText>
-        <IdeaTiles ideas={ideas} />
+        <SectionHeader title="Contacts to try" actionLabel="See all" onAction={() => router.navigate('/explore')} />
+        {suggested.map((agent, i) => (
+          <Fragment key={agent.id}>
+            {i > 0 && <Separator inset={48 + spacing.md + 2} />}
+            <AgentCard
+              agent={agent}
+              onPress={() => router.push({ pathname: '/agent/[id]', params: { id: agent.id } })}
+              onCall={() => callAgent(agent.id)}
+            />
+          </Fragment>
+        ))}
       </View>
     </ScrollView>
   );
@@ -71,5 +93,4 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   stories: { marginTop: spacing.xxl, width: '100%', maxWidth: 680, alignSelf: 'center' },
   section: { marginTop: spacing.xxxl },
-  sectionTitle: { marginBottom: spacing.md },
 });
