@@ -87,6 +87,19 @@ export function monthlyPrice(plan: Plan): number {
 /** Yearly billing is discounted by this fraction. */
 export const YEARLY_DISCOUNT = 0.2;
 
+const RANK: Record<PlanId, number> = { free: 0, plus: 1, pro: 2 };
+
+/** A running paid plan can't be swapped for a lower one; it drops to Free when it expires. */
+export function isDowngrade(target: PlanId, current: PlanId): boolean {
+  return RANK[target] < RANK[current];
+}
+
+/** "12 Dec 2026" */
+export function formatPlanDate(iso: string | null): string {
+  if (!iso) return 'the end of your plan';
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export function priceFor(plan: Plan, period: 'monthly' | 'yearly'): number {
   const monthly = monthlyPrice(plan);
   return period === 'monthly' ? monthly : Math.round(monthly * 12 * (1 - YEARLY_DISCOUNT) * 100) / 100;

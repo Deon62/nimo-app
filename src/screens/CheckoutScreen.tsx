@@ -14,7 +14,7 @@ import { FormField } from '@/components/FormField';
 import { PeriodToggle } from '@/components/PeriodToggle';
 import { goBackOr, ScreenHeader } from '@/components/ScreenHeader';
 import { Separator } from '@/components/Separator';
-import { formatMoney, getPlan, priceFor, YEARLY_DISCOUNT } from '@/data/plans';
+import { formatMoney, formatPlanDate, getPlan, isDowngrade, priceFor, YEARLY_DISCOUNT } from '@/data/plans';
 import { errorMessage } from '@/lib/api';
 import { payWithMpesa, payWithNewCard, payWithSavedCard } from '@/lib/payments';
 import { methodLabel, useAccount, type BillingPeriod, type PaymentMethod } from '@/state/AccountContext';
@@ -82,6 +82,8 @@ export function CheckoutScreen() {
 
   const free = plan.id === 'free';
   const current = account.planId === plan.id && (free || account.billingPeriod === period);
+  // Can't move to a lower paid plan while the current one is still running.
+  const locked = !free && isDowngrade(plan.id, account.planId);
   const noMethods = account.paymentMethods.length === 0;
   // Nothing saved yet: start on M-Pesa so they can type a number and pay right here.
   const chosenId = cardId ?? account.defaultPaymentId ?? NEW_MPESA;
@@ -283,6 +285,12 @@ export function CheckoutScreen() {
               </AppText>
             </Animated.View>
           )}
+          {locked && (
+            <AppText variant="footnote" tone="secondary" align="center" style={styles.lockedNote}>
+              You’re on {getPlan(account.planId)?.name} until {formatPlanDate(account.planEndsAt)}. You can choose{' '}
+              {plan.name} after that.
+            </AppText>
+          )}
           {error && !processing ? (
             <AppText variant="footnote" tone="danger" align="center">
               {error}
@@ -292,7 +300,7 @@ export function CheckoutScreen() {
             label={current ? 'Current plan' : free ? 'Got it' : `Pay ${formatMoney(total)}`}
             size="large"
             loading={processing}
-            disabled={current || processing}
+            disabled={current || locked || processing}
             onPress={free ? () => goBackOr('/plans') : pay}
           />
         </View>
@@ -332,6 +340,7 @@ const styles = StyleSheet.create({
   toggleGlow: { position: 'absolute', width: 170, height: 34, borderRadius: 17 },
   kes: { marginTop: -spacing.xs, marginBottom: 2 },
   prompt: { gap: 2, marginBottom: spacing.lg },
+  lockedNote: { marginBottom: spacing.lg },
   summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

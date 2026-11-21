@@ -15,7 +15,7 @@ import { AppText } from '@/components/AppText';
 import { Button } from '@/components/Button';
 import { PlanWaves } from '@/components/PlanWaves';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { plans, type Plan, type PlanId } from '@/data/plans';
+import { formatPlanDate, isDowngrade, plans, type Plan, type PlanId } from '@/data/plans';
 import { useAccount } from '@/state/AccountContext';
 import { colors, radius, spacing } from '@/theme';
 
@@ -56,10 +56,13 @@ function PlanCard({
   width,
   scrollX,
   current,
+  lockedUntil,
   onSubscribe,
 }: {
   plan: Plan;
   current: boolean;
+  /** Set when this is a lower plan than the one still running: the date it can be chosen. */
+  lockedUntil: string | null;
   index: number;
   width: number;
   scrollX: SharedValue<number>;
@@ -116,9 +119,17 @@ function PlanCard({
       </View>
 
       <Button
-        label={current ? 'Current plan' : plan.id === 'free' ? 'Switch to Free' : `Subscribe to ${plan.name}`}
+        label={
+          current
+            ? 'Current plan'
+            : lockedUntil
+              ? `Available after ${lockedUntil}`
+              : plan.id === 'free'
+                ? 'Switch to Free'
+                : `Subscribe to ${plan.name}`
+        }
         size="large"
-        disabled={current}
+        disabled={current || !!lockedUntil}
         onPress={() => onSubscribe(plan)}
         style={styles.subscribe}
       />
@@ -128,7 +139,7 @@ function PlanCard({
 
 export function PlansScreen() {
   const { width: screenWidth } = useWindowDimensions();
-  const { planId } = useAccount();
+  const { planId, planEndsAt } = useAccount();
   const cardWidth = Math.min(320, Math.round(screenWidth * 0.76));
   const step = cardWidth + GAP;
   const sidePadding = (Math.min(screenWidth, 760) - cardWidth) / 2;
@@ -173,6 +184,7 @@ export function PlansScreen() {
               width={cardWidth}
               scrollX={scrollX}
               current={plan.id === planId}
+              lockedUntil={isDowngrade(plan.id, planId) ? formatPlanDate(planEndsAt) : null}
               onSubscribe={() => router.push({ pathname: '/checkout/[plan]', params: { plan: plan.id } })}
             />
           ))}

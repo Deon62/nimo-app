@@ -93,7 +93,7 @@ export function CallHistoryScreen() {
     <View style={styles.header}>
       {hasCalls ? (
         <HeaderSearch
-          title="Your calls"
+          title="Your AI calls"
           open={searching}
           onOpenChange={setSearching}
           value={query}
