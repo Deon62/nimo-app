@@ -96,6 +96,11 @@ const callAudioMode = (speaker: boolean) =>
     () => {},
   );
 
+/** Ringback heard while connecting: a 3 s double ring, looped. */
+const RINGBACK = require('../../assets/sounds/ringback.wav');
+/** Ring at least one full cycle before the agent picks up, even on a fast connection. */
+const MIN_RING_MS = 3000;
+
 interface Options {
   onCallEnded?: (call: CompletedCall) => void;
 }
@@ -104,6 +109,7 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
   const [call, setCall] = useState<CallState | null>(null);
   const recorder = useAudioRecorder(RECORDING_OPTIONS);
   const player = useAudioPlayer(null);
+  const ringer = useAudioPlayer(RINGBACK);
 
   const callRef = useRef<CallState | null>(null);
   /** Bumped on every start/end: async work from an old call checks it and stops. */
@@ -186,14 +192,35 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
 
   // ---- Turn loop -----------------------------------------------------------------------------
 
+  const ringing = useRef(false);
+  // Loop the ring by hand (the hook's player can't be mutated): start again each time it finishes.
+  useEffect(() => {
+    const sub = ringer.addListener('playbackStatusUpdate', (status) => {
+      if (!status.didJustFinish || !ringing.current) return;
+      void ringer.seekTo(0).then(() => ringing.current && ringer.play());
+    });
+    return () => sub.remove();
+  }, [ringer]);
+
+  const startRinging = useCallback(() => {
+    ringing.current = true;
+    void ringer.seekTo(0).catch(() => {});
+    ringer.play();
+  }, [ringer]);
+  const stopRinging = useCallback(() => {
+    ringing.current = false;
+    ringer.pause();
+  }, [ringer]);
+
   const fail = useCallback(
     (message: string) => {
       token.current += 1;
+      stopRinging();
       void stopRecording();
       player.pause();
       patch({ phase: 'ended', error: message, caption: null, video: false });
     },
-    [patch, player, stopRecording],
+    [patch, player, stopRecording, stopRinging],
   );
 
   /** `end` is defined further down; the agent hangs up through this ref. */
@@ -350,14 +377,20 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
         return;
       }
       await callAudioMode(false);
+      if (token.current !== mine) return;
+      startRinging();
+      const ringStarted = Date.now();
 
       try {
         const res = await api<StartResponse>('/calls', { method: 'POST', json: { agent_id: agentId } });
+        const ringLeft = MIN_RING_MS - (Date.now() - ringStarted);
+        if (ringLeft > 0 && token.current === mine) await new Promise((r) => setTimeout(r, ringLeft));
         if (token.current !== mine) {
           // Hung up while connecting.
           void api(`/calls/${res.call_id}/end`, { method: 'POST', json: { duration_seconds: 0 } }).catch(() => {});
           return;
         }
+        stopRinging();
         const greeting: TranscriptLine = { speaker: 'agent', text: res.greeting };
         patch({ id: res.call_id, connectedAt: Date.now(), phase: 'speaking', caption: greeting });
         await play(voicePreviewSource(agentId), () => {
@@ -369,13 +402,14 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
         if (token.current === mine) fail(errorMessage(e));
       }
     },
-    [patch, play, player, fail, stopRecording],
+    [patch, play, player, fail, stopRecording, startRinging, stopRinging],
   );
 
   const end = useCallback(() => {
     const prev = callRef.current;
     if (!prev || prev.phase === 'ended') return;
     token.current += 1;
+    stopRinging();
     afterPlayback.current = null;
     void stopRecording();
     player.pause();
@@ -396,7 +430,7 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
       transcript: prev.transcript,
     });
     patch({ phase: 'ended', caption: null, video: false, elapsedSeconds: durationSeconds });
-  }, [patch, player, stopRecording]);
+  }, [patch, player, stopRecording, stopRinging]);
 
   useLayoutEffect(() => {
     endRef.current = end;

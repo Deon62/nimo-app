@@ -31,7 +31,7 @@ import { colors, fontFamily, hitTarget, screenPadding, spacing } from '@/theme';
 import { formatDuration } from '@/utils/format';
 
 const phaseLabel: Record<CallPhase, string> = {
-  connecting: 'Connecting…',
+  connecting: 'Ringing…',
   listening: 'Listening',
   thinking: 'Thinking',
   speaking: 'Speaking',
