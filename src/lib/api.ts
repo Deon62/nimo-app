@@ -37,11 +37,16 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
       },
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
-  } catch {
+  } catch (e) {
+    console.warn(`[api] ${rest.method ?? 'GET'} ${path} -> network error`, e);
     throw new ApiError('Can’t reach Nimo. Check your connection.', 0);
   }
   const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new ApiError(messageFor(res.status, body?.detail), res.status);
+  if (!res.ok) {
+    // Shows up in the Metro terminal / device logs with the server's full error.
+    console.warn(`[api] ${rest.method ?? 'GET'} ${path} -> ${res.status}`, body?.detail ?? body);
+    throw new ApiError(messageFor(res.status, body?.detail), res.status);
+  }
   return body as T;
 }
 

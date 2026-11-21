@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { setAudioModeAsync, useAudioPlayer } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, type AudioSource } from 'expo-audio';
 
 import type { Agent } from '@/data/agents';
+import { voicePreviewSource } from '@/data/voicePreviews';
 import { apiUrl } from '@/lib/api';
 
 interface VoicePreviewValue {
@@ -13,13 +14,12 @@ interface VoicePreviewValue {
   buffering: boolean;
   toggle: (agent: Agent) => void;
   /** Plays audio clips back to back (sample calls, call recordings). */
-  toggleScript: (id: string, urls: string[]) => void;
+  toggleScript: (id: string, urls: (string | AudioSource)[]) => void;
   stop: () => void;
 }
 
 const VoicePreviewContext = createContext<VoicePreviewValue | null>(null);
 
-export const previewUrl = (agentId: string) => apiUrl(`/agents/${agentId}/preview`);
 export const sampleLineUrl = (agentId: string, line: number) => apiUrl(`/agents/${agentId}/sample/${line}`);
 
 /** Plays ElevenLabs voice previews, sample calls and recordings, one at a time. */
@@ -28,7 +28,7 @@ export function VoicePreviewProvider({ children }: { children: ReactNode }) {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [lineIndex, setLineIndex] = useState(0);
   const [buffering, setBuffering] = useState(false);
-  const queue = useRef<{ id: string; urls: string[]; index: number } | null>(null);
+  const queue = useRef<{ id: string; urls: (string | AudioSource)[]; index: number } | null>(null);
 
   const playIndex = useCallback(
     (index: number) => {
@@ -43,7 +43,8 @@ export function VoicePreviewProvider({ children }: { children: ReactNode }) {
       q.index = index;
       setLineIndex(index);
       setBuffering(true);
-      player.replace({ uri: q.urls[index] });
+      const source = q.urls[index];
+      player.replace(typeof source === 'string' ? { uri: source } : source);
       player.play();
     },
     [player],
@@ -66,7 +67,7 @@ export function VoicePreviewProvider({ children }: { children: ReactNode }) {
   }, [player]);
 
   const toggleScript = useCallback(
-    (id: string, urls: string[]) => {
+    (id: string, urls: (string | AudioSource)[]) => {
       if (playingId === id) {
         stop();
         return;
@@ -80,7 +81,7 @@ export function VoicePreviewProvider({ children }: { children: ReactNode }) {
     [playingId, stop, playIndex],
   );
 
-  const toggle = useCallback((agent: Agent) => toggleScript(agent.id, [previewUrl(agent.id)]), [toggleScript]);
+  const toggle = useCallback((agent: Agent) => toggleScript(agent.id, [voicePreviewSource(agent.id)]), [toggleScript]);
 
   const value = useMemo(
     () => ({ playingId, lineIndex, buffering, toggle, toggleScript, stop }),

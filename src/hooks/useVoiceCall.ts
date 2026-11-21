@@ -6,11 +6,13 @@ import {
   setAudioModeAsync,
   useAudioPlayer,
   useAudioRecorder,
+  type AudioSource,
 } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 
 import type { TranscriptLine } from '@/data/calls';
-import { api, apiUrl, errorMessage } from '@/lib/api';
+import { voicePreviewSource } from '@/data/voicePreviews';
+import { api, errorMessage } from '@/lib/api';
 
 /**
  * A real voice call, one turn at a time:
@@ -147,9 +149,9 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
 
   /** Plays a reply; `done` runs when it finishes. */
   const play = useCallback(
-    async (source: string, done: () => void) => {
+    async (source: string | AudioSource, done: () => void) => {
       afterPlayback.current = done;
-      player.replace({ uri: source });
+      player.replace(typeof source === 'string' ? { uri: source } : source);
       player.play();
     },
     [player],
@@ -197,8 +199,9 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
           const blob = await (await fetch(uri)).blob();
           form.append('audio', blob, blob.type.includes('webm') ? 'speech.webm' : 'speech.m4a');
         } else {
-          // React Native's FormData takes a file descriptor object.
-          form.append('audio', { uri, name: 'speech.m4a', type: 'audio/mp4' } as unknown as Blob);
+          // Expo's fetch reads parts that expose `bytes()` (expo-file-system File), not the old
+          // React Native `{ uri, name, type }` descriptor ("Unsupported FormDataPart implementation").
+          form.append('audio', new File(uri) as unknown as Blob);
         }
         const res = await api<TurnResponse>(`/calls/${current.id}/voice`, { method: 'POST', body: form });
         if (token.current !== mine) return;
@@ -330,7 +333,7 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
         }
         const greeting: TranscriptLine = { speaker: 'agent', text: res.greeting };
         patch({ id: res.call_id, connectedAt: Date.now(), phase: 'speaking', caption: greeting });
-        await play(apiUrl(`/agents/${agentId}/preview`), () => {
+        await play(voicePreviewSource(agentId), () => {
           if (token.current !== mine) return;
           patch((prev) => ({ caption: null, transcript: [...prev.transcript, greeting] }));
           listenRef.current();
