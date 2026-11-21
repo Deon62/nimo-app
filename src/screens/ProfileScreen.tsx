@@ -1,5 +1,6 @@
 // Folder index routes are typed as "/x/index" by the route generator, but navigate as "/x".
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { router, type Href } from 'expo-router';
 import { Camera, CreditCard, Gem, Settings, UserRound, Wallet } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,7 +11,9 @@ import { HeaderIconButton } from '@/components/HeaderIconButton';
 import { InsetGroup } from '@/components/InsetGroup';
 import { ListRow } from '@/components/ListRow';
 import { PressableScale } from '@/components/PressableScale';
+import { Toast, useToast } from '@/components/Toast';
 import { getPlan } from '@/data/plans';
+import { errorMessage } from '@/lib/api';
 import { usePickPhoto } from '@/hooks/usePickPhoto';
 import { useTabBarInset } from '@/hooks/useTabBarInset';
 import { useAccount } from '@/state/AccountContext';
@@ -24,9 +27,22 @@ export function ProfileScreen() {
   const plan = getPlan(planId);
   const defaultCard = paymentMethods.find((m) => m.id === defaultPaymentId);
 
+  const toast = useToast(2800);
+  const [uploading, setUploading] = useState(false);
+
   const changePhoto = async () => {
+    if (uploading) return;
     const uri = await pickPhoto();
-    if (uri) await setAvatar(uri).catch(() => {});
+    if (!uri) return;
+    setUploading(true);
+    try {
+      await setAvatar(uri);
+      toast.show('Profile photo updated');
+    } catch (e) {
+      toast.show(errorMessage(e));
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -53,6 +69,11 @@ export function ProfileScreen() {
             activeScale={0.95}
           >
             <UserAvatar name={profile.firstName} uri={profile.avatarUri} size={104} />
+            {uploading && (
+              <View style={styles.uploading}>
+                <ActivityIndicator color="#FFFFFF" />
+              </View>
+            )}
             <View style={styles.cameraBadge}>
               <Camera size={15} color="#FFFFFF" strokeWidth={2} />
             </View>
@@ -78,6 +99,7 @@ export function ProfileScreen() {
           />
         </InsetGroup>
       </ScrollView>
+      <Toast message={toast.message} bottom={bottomInset + spacing.md} />
     </View>
   );
 }
@@ -101,4 +123,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   name: { marginTop: spacing.lg },
+  uploading: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: 52,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

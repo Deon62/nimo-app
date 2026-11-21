@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Platform } from 'react-native';
+import { File } from 'expo-file-system';
 
 import type { PlanId } from '@/data/plans';
 import { api } from '@/lib/api';
@@ -170,12 +172,18 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       if (!session) return;
       let url: string | null = null;
       if (localUri) {
-        const blob = await (await fetch(localUri)).arrayBuffer();
-        const path = `${session.user.id}/avatar-${Date.now()}.jpg`;
-        const { error } = await supabase.storage
-          .from('avatars')
-          .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-        if (error) throw error;
+        const ext = /\.(png|webp|heic|heif)$/i.exec(localUri)?.[1]?.toLowerCase() ?? 'jpg';
+        const contentType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+        // On native, read the picked file directly; Expo's fetch doesn't load file:// URIs.
+        const bytes =
+          Platform.OS === 'web' ? await (await fetch(localUri)).arrayBuffer() : await new File(localUri).bytes();
+        const path = `${session.user.id}/avatar-${Date.now()}.${ext}`;
+        // A new path each time, so no upsert: upsert also needs a read policy the avatars bucket doesn't have.
+        const { error } = await supabase.storage.from('avatars').upload(path, bytes, { contentType });
+        if (error) {
+          console.warn('[avatar] upload failed', error);
+          throw new Error('Couldn’t upload your photo. Try again.');
+        }
         url = supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl;
       }
       const { error } = await supabase.from('profiles').update({ avatar_url: url }).eq('id', session.user.id);
