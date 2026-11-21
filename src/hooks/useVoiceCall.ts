@@ -85,6 +85,15 @@ const VAD = {
 
 const RECORDING_OPTIONS = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
 
+/**
+ * Audio mode for a call. Always pass the whole mode: on iOS, fields left out reset to false, so
+ * setting only the speaker route would also turn `allowsRecording` off and break the mic.
+ */
+const callAudioMode = (speaker: boolean) =>
+  setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true, shouldRouteThroughEarpiece: !speaker }).catch(
+    () => {},
+  );
+
 interface Options {
   onCallEnded?: (call: CompletedCall) => void;
 }
@@ -235,7 +244,13 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
     if (current.muted) return;
 
     try {
-      await recorder.prepareToRecordAsync();
+      try {
+        await recorder.prepareToRecordAsync();
+      } catch {
+        // Something (another player, an interruption) may have switched recording off: turn it back on once.
+        await callAudioMode(!!callRef.current?.speaker);
+        await recorder.prepareToRecordAsync();
+      }
       if (token.current !== mine || callRef.current?.muted) return;
       recorder.record();
       recordingActive.current = true;
@@ -323,7 +338,7 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
         fail('Allow microphone access in Settings to talk to Nimo.');
         return;
       }
-      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true }).catch(() => {});
+      await callAudioMode(false);
 
       try {
         const res = await api<StartResponse>('/calls', { method: 'POST', json: { agent_id: agentId } });
@@ -392,7 +407,7 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
   const toggleSpeaker = useCallback(() => {
     const speaker = !callRef.current?.speaker;
     patch({ speaker });
-    void setAudioModeAsync({ shouldRouteThroughEarpiece: !speaker }).catch(() => {});
+    void callAudioMode(speaker);
   }, [patch]);
 
   const toggleRecording = useCallback(() => {
