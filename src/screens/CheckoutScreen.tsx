@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { router, useLocalSearchParams, type Href } from 'expo-router';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 import { Check, Gem } from 'lucide-react-native';
 import Animated, { FadeIn, ZoomIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { AppText } from '@/components/AppText';
 import { Button } from '@/components/Button';
 import { CardChip } from '@/components/CardChip';
 import { EmptyState } from '@/components/EmptyState';
+import { FormField } from '@/components/FormField';
 import { PeriodToggle } from '@/components/PeriodToggle';
 import { goBackOr, ScreenHeader } from '@/components/ScreenHeader';
 import { Separator } from '@/components/Separator';
@@ -17,13 +18,17 @@ import { formatMoney, getPlan, priceFor, YEARLY_DISCOUNT } from '@/data/plans';
 import { errorMessage } from '@/lib/api';
 import { payWithMpesa, payWithNewCard, payWithSavedCard } from '@/lib/payments';
 import { methodLabel, useAccount, type BillingPeriod, type PaymentMethod } from '@/state/AccountContext';
+import { useAuth } from '@/state/AuthContext';
 import { withAlpha } from '@/utils/color';
-import { toKes } from '@/utils/mpesa';
+import { formatKenyanPhone, normaliseKenyanPhone, toKes } from '@/utils/mpesa';
 import { colors, screenPadding, spacing } from '@/theme';
 
 /** Pay with a card entered on Paystack's page (it's saved afterwards). */
 const NEW_CARD = 'new-card';
+/** Pay with an M-Pesa number typed in here (it's saved afterwards). */
+const NEW_MPESA = 'new-mpesa';
 const NEW_CARD_METHOD = { kind: 'card', brand: 'Card' } as const;
+const NEW_MPESA_METHOD = { kind: 'mpesa' } as const;
 
 function renewalDate(period: BillingPeriod): string {
   const d = new Date();
@@ -53,6 +58,7 @@ export function CheckoutScreen() {
   const { plan: planParam } = useLocalSearchParams<{ plan: string }>();
   const { bottom } = useSafeAreaInsets();
   const account = useAccount();
+  const { session } = useAuth();
   const plan = getPlan(planParam);
   const [period, setPeriod] = useState<BillingPeriod>(account.billingPeriod ?? 'monthly');
   const [cardId, setCardId] = useState<string | null>(null);
@@ -61,6 +67,9 @@ export function CheckoutScreen() {
   const [promptKes, setPromptKes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // Prefilled with the number they signed in with, if any.
+  const [mpesaPhone, setMpesaPhone] = useState(() => formatKenyanPhone(session?.user.phone ?? ''));
+  const [phoneTouched, setPhoneTouched] = useState(false);
 
   if (!plan) {
     return (
@@ -73,20 +82,32 @@ export function CheckoutScreen() {
 
   const free = plan.id === 'free';
   const current = account.planId === plan.id && (free || account.billingPeriod === period);
-  const chosenId = cardId ?? account.defaultPaymentId ?? NEW_CARD;
+  const noMethods = account.paymentMethods.length === 0;
+  // Nothing saved yet: start on M-Pesa so they can type a number and pay right here.
+  const chosenId = cardId ?? account.defaultPaymentId ?? NEW_MPESA;
   const card: PaymentMethod | null = account.paymentMethods.find((m) => m.id === chosenId) ?? null;
+  const newMpesa = !card && chosenId === NEW_MPESA;
+  const newMpesaPhone = normaliseKenyanPhone(mpesaPhone);
   const total = priceFor(plan, period);
   const monthlyEquivalent = period === 'yearly' ? total / 12 : total;
 
-  const mpesa = card?.kind === 'mpesa';
+  const mpesa = card?.kind === 'mpesa' || newMpesa;
 
   const pay = async () => {
+    if (newMpesa && !newMpesaPhone) {
+      setPhoneTouched(true);
+      return;
+    }
     setProcessing(true);
     setError(null);
     try {
       if (card?.kind === 'mpesa') await payWithMpesa(plan.id, period, card.phone, setPromptKes);
       else if (card) await payWithSavedCard(plan.id, period, card.id);
-      else await payWithNewCard(plan.id, period);
+      else if (newMpesa && newMpesaPhone) {
+        await payWithMpesa(plan.id, period, newMpesaPhone, setPromptKes);
+        // Save the number for next time; the payment already went through either way.
+        await account.addMpesaNumber(newMpesaPhone).catch(() => {});
+      } else await payWithNewCard(plan.id, period);
       await account.refresh().catch(() => {});
       setDone(true);
     } catch (e) {
@@ -122,9 +143,12 @@ export function CheckoutScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScreenHeader title="Checkout" />
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: bottom + spacing.xl }]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: bottom + spacing.xl }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.planHead}>
           <View style={[styles.planDot, { backgroundColor: plan.color }]} />
           <AppText variant="largeTitle">{plan.name}</AppText>
@@ -175,34 +199,74 @@ export function CheckoutScreen() {
               <AppText variant="footnote" tone="tertiary" style={styles.kicker}>
                 PAY WITH
               </AppText>
-              <Pressable
-                onPress={() => setChoosingCard(true)}
-                accessibilityRole="button"
-                accessibilityLabel={`Pay with ${card ? methodLabel(card) : 'card'}. Change`}
-              >
-                {({ pressed }) => (
-                  <View style={[styles.cardRow, pressed && styles.pressed]}>
-                    <CardChip method={card ?? NEW_CARD_METHOD} />
-                    <AppText variant="body" weight="500" style={styles.flex}>
-                      {card ? methodLabel(card) : 'Card'}
-                    </AppText>
-                    <AppText variant="subhead" weight="600">
-                      Change
-                    </AppText>
-                  </View>
-                )}
-              </Pressable>
-              {account.paymentMethods.length === 0 && (
+              {noMethods ? (
+                // Nothing saved: choose here and pay; the method is saved as part of paying.
+                [
+                  { id: NEW_MPESA, method: NEW_MPESA_METHOD, label: 'M-Pesa', hint: 'PIN prompt on your phone' },
+                  { id: NEW_CARD, method: NEW_CARD_METHOD, label: 'Card', hint: 'Enter card details securely' },
+                ].map((option) => {
+                  const selected = chosenId === option.id;
+                  return (
+                    <Pressable
+                      key={option.id}
+                      onPress={() => setCardId(option.id)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={`Pay with ${option.label}`}
+                    >
+                      {({ pressed }) => (
+                        <View style={[styles.cardRow, pressed && styles.pressed]}>
+                          <CardChip method={option.method} />
+                          <View style={styles.flex}>
+                            <AppText variant="body" weight="500">
+                              {option.label}
+                            </AppText>
+                            <AppText variant="footnote" tone="secondary">
+                              {option.hint}
+                            </AppText>
+                          </View>
+                          <View style={[styles.radio, selected && styles.radioOn]}>
+                            {selected && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                          </View>
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })
+              ) : (
                 <Pressable
-                  onPress={() => router.push('/payment-methods/mpesa' as Href)}
-                  accessibilityRole="link"
-                  hitSlop={8}
-                  style={({ pressed }) => [styles.addLink, pressed && styles.pressed]}
+                  onPress={() => setChoosingCard(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Pay with ${card ? methodLabel(card) : newMpesa ? 'M-Pesa' : 'card'}. Change`}
                 >
-                  <AppText variant="body" weight="600" align="center" style={styles.addLinkText}>
-                    Pay with M-Pesa instead
-                  </AppText>
+                  {({ pressed }) => (
+                    <View style={[styles.cardRow, pressed && styles.pressed]}>
+                      <CardChip method={card ?? (newMpesa ? NEW_MPESA_METHOD : NEW_CARD_METHOD)} />
+                      <AppText variant="body" weight="500" style={styles.flex}>
+                        {card ? methodLabel(card) : newMpesa ? 'New M-Pesa number' : 'New card'}
+                      </AppText>
+                      <AppText variant="subhead" weight="600">
+                        Change
+                      </AppText>
+                    </View>
+                  )}
                 </Pressable>
+              )}
+              {newMpesa && (
+                <Animated.View entering={FadeIn.duration(200)} style={styles.phoneField}>
+                  <FormField
+                    label="M-Pesa number"
+                    value={mpesaPhone}
+                    onChangeText={(v) => setMpesaPhone(formatKenyanPhone(v))}
+                    onBlur={() => setPhoneTouched(true)}
+                    placeholder="0712 345 678"
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    textContentType="telephoneNumber"
+                    editable={!processing}
+                    error={phoneTouched && !newMpesaPhone ? 'Enter a valid Kenyan mobile number' : undefined}
+                  />
+                </Animated.View>
               )}
             </View>
           </>
@@ -244,11 +308,11 @@ export function CheckoutScreen() {
             selected: m.id === card?.id,
             onPress: () => setCardId(m.id),
           })),
-          { label: 'New card', selected: !card, onPress: () => setCardId(NEW_CARD) },
-          { label: 'Add M-Pesa', onPress: () => router.push('/payment-methods/mpesa') },
+          { label: 'New card', selected: !card && !newMpesa, onPress: () => setCardId(NEW_CARD) },
+          { label: 'New M-Pesa number', selected: newMpesa, onPress: () => setCardId(NEW_MPESA) },
         ]}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -278,8 +342,17 @@ const styles = StyleSheet.create({
   payment: { gap: spacing.xs },
   kicker: { letterSpacing: 0.6 },
   cardRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.md },
-  addLink: { alignSelf: 'center', paddingVertical: spacing.md },
-  addLinkText: { textDecorationLine: 'underline' },
+  phoneField: { flexDirection: 'row', paddingTop: spacing.sm },
+  radio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioOn: { backgroundColor: colors.ink, borderColor: colors.ink },
   pressed: { opacity: 0.5 },
   flex: { flex: 1 },
   footer: { marginTop: 'auto' },
