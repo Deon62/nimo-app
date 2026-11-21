@@ -352,7 +352,9 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
     const durationSeconds = prev.connectedAt ? Math.floor((Date.now() - prev.connectedAt) / 1000) : 0;
     const connected = prev.connectedAt !== null;
     if (connected) {
-      void api(`/calls/${prev.id}/end`, { method: 'POST', json: { duration_seconds: durationSeconds } }).catch(() => {});
+      void api(`/calls/${prev.id}/end`, { method: 'POST', json: { duration_seconds: durationSeconds } }).catch(
+        () => {},
+      );
     }
     onEndedRef.current?.({
       id: prev.id,
@@ -400,7 +402,10 @@ export function useVoiceCall({ onCallEnded }: Options = {}) {
   }, [patch]);
 
   const setVideo = useCallback((video: boolean) => patch({ video }), [patch]);
-  const flipCamera = useCallback(() => patch((prev) => ({ facing: prev.facing === 'front' ? 'back' : 'front' })), [patch]);
+  const flipCamera = useCallback(
+    () => patch((prev) => ({ facing: prev.facing === 'front' ? 'back' : 'front' })),
+    [patch],
+  );
 
   // Stop everything if the provider unmounts.
   useEffect(

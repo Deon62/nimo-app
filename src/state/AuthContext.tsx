@@ -19,7 +19,12 @@ interface AuthValue {
   session: Session | null;
   finishOnboarding: () => void;
   signInWithEmail: (email: string, password: string) => Promise<void>;
-  signUpWithEmail: (input: { email: string; password: string; firstName: string; lastName: string }) => Promise<SignUpResult>;
+  signUpWithEmail: (input: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+  }) => Promise<SignUpResult>;
   sendPhoneCode: (phoneE164: string) => Promise<void>;
   verifyPhoneCode: (phoneE164: string, code: string) => Promise<void>;
   signInWithProvider: (provider: OAuthProvider) => Promise<boolean>;
@@ -88,22 +93,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signInWithEmail = useCallback(async (email: string, password: string) => {
     ensureConfigured();
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message);
+    if (error)
+      throw new Error(error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message);
   }, []);
 
-  const signUpWithEmail = useCallback<AuthValue['signUpWithEmail']>(async ({ email, password, firstName, lastName }) => {
-    ensureConfigured();
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim() },
-        emailRedirectTo: Linking.createURL('verify'),
-      },
-    });
-    if (error) throw error;
-    return data.session ? 'signed-in' : 'confirm-email';
-  }, []);
+  const signUpWithEmail = useCallback<AuthValue['signUpWithEmail']>(
+    async ({ email, password, firstName, lastName }) => {
+      ensureConfigured();
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          data: { first_name: firstName, last_name: lastName, full_name: `${firstName} ${lastName}`.trim() },
+          emailRedirectTo: Linking.createURL('verify'),
+        },
+      });
+      if (error) throw error;
+      return data.session ? 'signed-in' : 'confirm-email';
+    },
+    [],
+  );
 
   const sendPhoneCode = useCallback(async (phone: string) => {
     ensureConfigured();
@@ -114,7 +123,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyPhoneCode = useCallback(async (phone: string, token: string) => {
     ensureConfigured();
     const { error } = await supabase.auth.verifyOtp({ phone, token, type: 'sms' });
-    if (error) throw new Error(error.message.includes('expired') ? 'That code has expired. Send a new one.' : error.message);
+    if (error)
+      throw new Error(error.message.includes('expired') ? 'That code has expired. Send a new one.' : error.message);
   }, []);
 
   /** Opens Google / Apple in the browser and finishes sign-in. Resolves false if the user cancels. */
@@ -159,7 +169,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetPassword,
       signOut,
     }),
-    [ready, onboarded, session, finishOnboarding, signInWithEmail, signUpWithEmail, sendPhoneCode, verifyPhoneCode, signInWithProvider, resetPassword, signOut],
+    [
+      ready,
+      onboarded,
+      session,
+      finishOnboarding,
+      signInWithEmail,
+      signUpWithEmail,
+      sendPhoneCode,
+      verifyPhoneCode,
+      signInWithProvider,
+      resetPassword,
+      signOut,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

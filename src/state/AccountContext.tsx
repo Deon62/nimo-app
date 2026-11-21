@@ -118,16 +118,25 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     setMethods(list);
   }, [session]);
 
+  // A different user (or signed out): drop the old user's data straight away.
+  const [loadedFor, setLoadedFor] = useState(userId);
+  if (loadedFor !== userId) {
+    setLoadedFor(userId);
+    setProfile(EMPTY_PROFILE);
+    setPlanId('free');
+    setBillingPeriod(null);
+    setPlanEndsAt(null);
+    setMethods([]);
+    setLoading(true);
+  }
+
   useEffect(() => {
-    if (!userId) {
-      setProfile(EMPTY_PROFILE);
-      setPlanId('free');
-      setMethods([]);
-      setLoading(true);
-      return;
-    }
+    if (!userId) return;
     let alive = true;
-    Promise.allSettled([loadProfile(), refresh()]).finally(() => alive && setLoading(false));
+    // Started from a promise so no state is set during the effect itself.
+    Promise.resolve()
+      .then(() => Promise.allSettled([loadProfile(), refresh()]))
+      .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
@@ -212,7 +221,20 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       setDefaultPayment,
       refresh,
     }),
-    [loading, profile, updateProfile, setAvatar, planId, billingPeriod, planEndsAt, methods, addMpesaNumber, removePaymentMethod, setDefaultPayment, refresh],
+    [
+      loading,
+      profile,
+      updateProfile,
+      setAvatar,
+      planId,
+      billingPeriod,
+      planEndsAt,
+      methods,
+      addMpesaNumber,
+      removePaymentMethod,
+      setDefaultPayment,
+      refresh,
+    ],
   );
   return <AccountContext.Provider value={value}>{children}</AccountContext.Provider>;
 }

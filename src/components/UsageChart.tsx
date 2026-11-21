@@ -11,8 +11,8 @@ const BAR_WIDTH = 22;
 
 interface UsageChartProps {
   data: DailyUsage[];
-  /** Daily allowance, drawn as a dashed reference line. */
-  limit: number;
+  /** Daily allowance, drawn as a dashed reference line. Null on unlimited plans. */
+  limit: number | null;
 }
 
 function Bar({
@@ -73,8 +73,9 @@ function Bar({
 /** Seven-day minutes bar chart with the daily limit marked. Tap a bar for its value. */
 export function UsageChart({ data, limit }: UsageChartProps) {
   const [selected, setSelected] = useState<number>(data.length - 1);
-  const max = Math.max(limit, ...data.map((d) => d.minutes));
-  const limitOffset = (limit / max) * CHART_HEIGHT;
+  // Floor of 1 keeps empty weeks from dividing by zero.
+  const max = Math.max(limit ?? 0, 1, ...data.map((d) => d.minutes));
+  const limitOffset = ((limit ?? 0) / max) * CHART_HEIGHT;
 
   return (
     <View
@@ -83,16 +84,18 @@ export function UsageChart({ data, limit }: UsageChartProps) {
     >
       <View style={styles.plot}>
         {/* Daily limit reference line */}
-        <View pointerEvents="none" style={[styles.limit, { bottom: limitOffset + 22 }]}>
-          <View style={styles.dashes}>
-            {Array.from({ length: 40 }, (_, i) => (
-              <View key={i} style={styles.dash} />
-            ))}
+        {limit !== null && (
+          <View pointerEvents="none" style={[styles.limit, { bottom: limitOffset + 22 }]}>
+            <View style={styles.dashes}>
+              {Array.from({ length: 40 }, (_, i) => (
+                <View key={i} style={styles.dash} />
+              ))}
+            </View>
+            <AppText variant="caption" tone="tertiary" style={styles.limitLabel}>
+              {limit} min
+            </AppText>
           </View>
-          <AppText variant="caption" tone="tertiary" style={styles.limitLabel}>
-            {limit} min
-          </AppText>
-        </View>
+        )}
         {data.map((item, i) => (
           <Bar key={i} item={item} max={max} index={i} selected={selected === i} onSelect={() => setSelected(i)} />
         ))}

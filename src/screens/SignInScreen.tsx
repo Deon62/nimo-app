@@ -103,12 +103,7 @@ export function SignInScreen() {
             onSubmitEditing={logIn}
             error={submitted ? errors.password : undefined}
           />
-          <Pressable
-            onPress={forgot}
-            hitSlop={8}
-            accessibilityRole="button"
-            style={styles.forgot}
-          >
+          <Pressable onPress={forgot} hitSlop={8} accessibilityRole="button" style={styles.forgot}>
             <AppText variant="footnote" weight="600" tone={resetSent ? 'secondary' : 'primary'}>
               {resetSent ? 'Reset link sent ✓' : 'Forgot password?'}
             </AppText>

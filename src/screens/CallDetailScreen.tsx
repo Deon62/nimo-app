@@ -92,11 +92,7 @@ export function CallDetailScreen() {
               RECORDING
             </AppText>
             {record.recorded ? (
-              <RecordingPlayer
-                callId={record.id}
-                agent={agent}
-                durationSeconds={record.durationSeconds}
-              />
+              <RecordingPlayer callId={record.id} agent={agent} durationSeconds={record.durationSeconds} />
             ) : (
               <ListRow
                 type="link"

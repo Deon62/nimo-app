@@ -163,7 +163,8 @@ export function CheckoutScreen() {
               <Separator />
               <Row label="Due today" value={formatMoney(total)} strong />
               <AppText variant="footnote" tone="secondary" style={styles.kes}>
-                Charged as about {toKes(total)}{mpesa ? ' via M-Pesa' : ''}
+                Charged as about {toKes(total)}
+                {mpesa ? ' via M-Pesa' : ''}
               </AppText>
               <AppText variant="footnote" tone="secondary">
                 Lasts until {renewalDate(period)}. Doesn’t renew automatically.

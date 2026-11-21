@@ -39,9 +39,10 @@ function toRecord(c: ApiCall): CallRecord {
     durationSeconds: c.duration_seconds,
     status: c.status,
     recorded: c.recorded,
-    transcript: (c.messages ?? []).map(
-      (m): TranscriptLine => ({ speaker: m.role === 'user' ? 'user' : 'agent', text: m.content }),
-    ),
+    transcript: (c.messages ?? []).map((m): TranscriptLine => ({
+      speaker: m.role === 'user' ? 'user' : 'agent',
+      text: m.content,
+    })),
   };
 }
 
@@ -69,10 +70,16 @@ export function CallHistoryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
+  // A different user (or signed out): drop the old user's calls straight away.
+  const [loadedFor, setLoadedFor] = useState(userId);
+  if (loadedFor !== userId) {
+    setLoadedFor(userId);
     setCalls([]);
     setLoading(true);
-    if (userId) void refresh();
+  }
+
+  useEffect(() => {
+    if (userId) void Promise.resolve().then(refresh);
   }, [userId, refresh]);
 
   const addCall = useCallback((record: CallRecord) => {
@@ -94,7 +101,9 @@ export function CallHistoryProvider({ children }: { children: ReactNode }) {
 
   const loadCall = useCallback(async (id: string) => {
     const record = toRecord(await api<ApiCall>(`/calls/${id}`));
-    setCalls((prev) => (prev.some((c) => c.id === id) ? prev.map((c) => (c.id === id ? record : c)) : [...prev, record]));
+    setCalls((prev) =>
+      prev.some((c) => c.id === id) ? prev.map((c) => (c.id === id ? record : c)) : [...prev, record],
+    );
     return record;
   }, []);
 

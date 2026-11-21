@@ -51,10 +51,7 @@ export async function payWithSavedCard(planId: PlanId, period: BillingPeriod, me
     reason?: string;
     authorization_url?: string;
     reference?: string;
-  }>(
-    '/billing/paystack/charge-saved',
-    { method: 'POST', json: { plan_id: planId, period, method_id: methodId } },
-  );
+  }>('/billing/paystack/charge-saved', { method: 'POST', json: { plan_id: planId, period, method_id: methodId } });
   if (res.status === 'paid') return;
   if (res.status === 'action_required' && res.authorization_url && res.reference) {
     await finishInBrowser(res.authorization_url, res.reference);

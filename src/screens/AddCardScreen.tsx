@@ -25,8 +25,8 @@ export function AddCardScreen() {
           </View>
           <AppText variant="title">Your card stays with Paystack</AppText>
           <AppText variant="subhead" tone="secondary">
-            Pay for a plan by card and enter it on Paystack’s secure page. It’s saved there, so next time you
-            pay in one tap. Nimo never sees your card number.
+            Pay for a plan by card and enter it on Paystack’s secure page. It’s saved there, so next time you pay in one
+            tap. Nimo never sees your card number.
           </AppText>
         </View>
         <View style={styles.footer}>

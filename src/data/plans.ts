@@ -69,23 +69,15 @@ export interface DailyUsage {
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const LAST_SEVEN = [7, 10, 4, 9, 6, 8, 5];
 
-/** Minutes called over the last seven days, ending today. */
-export function lastSevenDays(now: Date = new Date()): DailyUsage[] {
-  return LAST_SEVEN.map((minutes, i) => {
-    const date = new Date(now);
-    date.setDate(now.getDate() - (LAST_SEVEN.length - 1 - i));
-    return { label: WEEKDAYS[date.getDay()], minutes, isToday: i === LAST_SEVEN.length - 1 };
-  });
+/** Turns the API's `{date, minutes}` days (YYYY-MM-DD, oldest first) into chart bars. */
+export function toDailyUsage(days: { date: string; minutes: number }[]): DailyUsage[] {
+  return days.map((d, i) => ({
+    label: WEEKDAYS[new Date(`${d.date}T12:00:00Z`).getUTCDay()],
+    minutes: Math.round(d.minutes),
+    isToday: i === days.length - 1,
+  }));
 }
-
-export const usage = {
-  usedTodayMinutes: 5,
-  dailyMinutes: 10,
-  monthMinutes: 72,
-  monthCalls: 23,
-};
 
 /** Monthly price as a number, e.g. 9.99. */
 export function monthlyPrice(plan: Plan): number {
